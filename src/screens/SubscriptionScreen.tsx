@@ -20,6 +20,7 @@ import { useApp } from '../AppContext';
 import { findPeriodStarts } from '../cycle';
 import { encodeCycleCode } from '../cycleCode';
 import { useSubscription } from '../hooks/useSubscription';
+import { isDemoModeEnabled } from '../utils/activation';
 import { RootStackParamList } from '../navigation';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
 import { ThemeColors } from '../theme';
@@ -389,6 +390,12 @@ export const SubscriptionScreen: React.FC = () => {
           <Text style={styles.codeHint}>
             Бот пришлёт его после оплаты. Введи код, чтобы активировать подписку в приложении.
           </Text>
+          {isDemoModeEnabled() ? (
+            <Text style={[styles.codeHint, { marginTop: 6 }]}>
+              Демо-сборка: коды LIRADEMO, LIRABASIC, LIRAVIP активируют
+              соответствующий тариф на 30 дней без обращения к серверу.
+            </Text>
+          ) : null}
           <TextInput
             style={styles.codeInput}
             placeholder="Например, A7K9TXM2"
