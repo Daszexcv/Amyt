@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from typing import TYPE_CHECKING, Mapping, Sequence
 
@@ -92,6 +92,27 @@ OCCUPATIONS_LABELS: Mapping[str, str] = {
     "studying": "Учусь",
 }
 
+# Russian short month names in genitive case ("5 мая", "1 июня").
+RU_MONTH_GENITIVE_SHORT: Mapping[int, str] = {
+    1: "янв",
+    2: "фев",
+    3: "мар",
+    4: "апр",
+    5: "мая",
+    6: "июн",
+    7: "июл",
+    8: "авг",
+    9: "сен",
+    10: "окт",
+    11: "ноя",
+    12: "дек",
+}
+
+
+def _ru_short_date(d: date) -> str:
+    """Format as ``"15 окт"`` — what the admin asked for in the digest."""
+    return f"{d.day} {RU_MONTH_GENITIVE_SHORT[d.month]}"
+
 
 def _h(value: str | None) -> str:
     return escape(value) if value else "—"
@@ -143,10 +164,28 @@ def format_full_profile(user_tg: "TGUser", profile: "Profile") -> str:
         lines.append(
             f"• Последние месячные: <b>{profile.last_period_start:%d.%m.%Y}</b>"
         )
-    lines.append(
-        f"• Цикл: {profile.cycle_length_days or '—'} дн., "
-        f"месячные {profile.period_length_days or '—'} дн."
-    )
+    if profile.last_period_start and profile.cycle_length_days:
+        cycle_start = profile.last_period_start
+        cycle_end = cycle_start + timedelta(days=profile.cycle_length_days - 1)
+        lines.append(
+            f"• Цикл: <b>{_ru_short_date(cycle_start)} — "
+            f"{_ru_short_date(cycle_end)}</b> ({profile.cycle_length_days} дн.)"
+        )
+    else:
+        lines.append(
+            f"• Цикл: {profile.cycle_length_days or '—'} дн."
+        )
+    if profile.last_period_start and profile.period_length_days:
+        period_start = profile.last_period_start
+        period_end = period_start + timedelta(days=profile.period_length_days - 1)
+        lines.append(
+            f"• Месячные: <b>{_ru_short_date(period_start)} — "
+            f"{_ru_short_date(period_end)}</b> ({profile.period_length_days} дн.)"
+        )
+    else:
+        lines.append(
+            f"• Месячные: {profile.period_length_days or '—'} дн."
+        )
     lines.append("")
     lines.append("<b>Шаг 2. Гигиена</b>")
     lines.append(f"• Прокладки: {_list(profile.hygiene_pads, PADS_LABELS)}")
