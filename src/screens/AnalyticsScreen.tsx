@@ -34,36 +34,25 @@ export const AnalyticsScreen: React.FC = () => {
     return `${d.getDate()} ${months[d.getMonth()] ?? ''}`;
   };
 
-  if (!isPremium) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <WaveBackground colors={colors} />
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.h1}>{t('analytics.title')}</Text>
-          <PremiumGate
-            feature="Расширенная аналитика"
-            body="Графики цикла, статистика симптомов, средние длины циклов и месячных, irregular-флаг, прогноз овуляции. Открывается с любой подпиской — Premium / Базовая / VIP."
-          />
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <WaveBackground colors={colors} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.h1}>{t('analytics.title')}</Text>
 
-        <Pressable
-          style={styles.exportBtn}
-          onPress={() => {
-            void exportToPdf(data, 'analytics');
-          }}
-        >
-          <Text style={styles.exportBtnText}>Экспорт аналитики в PDF</Text>
-        </Pressable>
+        {isPremium ? (
+          <Pressable
+            style={styles.exportBtn}
+            onPress={() => {
+              void exportToPdf(data, 'analytics');
+            }}
+          >
+            <Text style={styles.exportBtnText}>Экспорт аналитики в PDF</Text>
+          </Pressable>
+        ) : null}
 
+        {/* Forecast block is available to free users — period, ovulation,
+            and basic averages. Deep charts stay behind PremiumGate below. */}
         <Text style={styles.section}>{t('analytics.forecast')}</Text>
         <View style={styles.row}>
           <ForecastCard
@@ -101,38 +90,47 @@ export const AnalyticsScreen: React.FC = () => {
           />
         </View>
 
-        <Text style={styles.section}>
-          {t('analytics.cycleLengthChartTitle')}
-        </Text>
-        {stats.cycleLengths.length >= 2 ? (
-          <View style={styles.chartCard}>
-            <CycleLengthChart
-              values={stats.cycleLengths.slice(-6)}
-              average={stats.averageCycleLength}
-              colors={colors}
-            />
-          </View>
-        ) : (
-          <View style={styles.chartCard}>
-            <Text style={styles.muted}>
-              {t('analytics.cycleLengthChartHint')}
+        {isPremium ? (
+          <>
+            <Text style={styles.section}>
+              {t('analytics.cycleLengthChartTitle')}
             </Text>
-          </View>
-        )}
+            {stats.cycleLengths.length >= 2 ? (
+              <View style={styles.chartCard}>
+                <CycleLengthChart
+                  values={stats.cycleLengths.slice(-6)}
+                  average={stats.averageCycleLength}
+                  colors={colors}
+                />
+              </View>
+            ) : (
+              <View style={styles.chartCard}>
+                <Text style={styles.muted}>
+                  {t('analytics.cycleLengthChartHint')}
+                </Text>
+              </View>
+            )}
 
-        <Text style={styles.section}>{t('analytics.symptomsTitle')}</Text>
-        {symptomCounts.length > 0 ? (
-          <View style={styles.chartCard}>
-            <SymptomsBreakdown
-              data={symptomCounts}
-              labelFor={(k) => t(`symptoms.${k}`)}
-              colors={colors}
-            />
-          </View>
+            <Text style={styles.section}>{t('analytics.symptomsTitle')}</Text>
+            {symptomCounts.length > 0 ? (
+              <View style={styles.chartCard}>
+                <SymptomsBreakdown
+                  data={symptomCounts}
+                  labelFor={(k) => t(`symptoms.${k}`)}
+                  colors={colors}
+                />
+              </View>
+            ) : (
+              <View style={styles.chartCard}>
+                <Text style={styles.muted}>{t('analytics.symptomsHint')}</Text>
+              </View>
+            )}
+          </>
         ) : (
-          <View style={styles.chartCard}>
-            <Text style={styles.muted}>{t('analytics.symptomsHint')}</Text>
-          </View>
+          <PremiumGate
+            feature="Графики цикла и симптомы"
+            body="История длительности циклов, статистика симптомов по фазам, irregular-флаг и экспорт всей аналитики в PDF. Открывается с любой подпиской — Premium / Базовая / VIP."
+          />
         )}
 
         <View style={{ height: 32 }} />

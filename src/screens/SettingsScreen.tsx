@@ -43,6 +43,7 @@ export const SettingsScreen: React.FC = () => {
   const [name, setName] = useState(data.profile.name);
   const [newPin, setNewPin] = useState('');
   const [newPinConfirm, setNewPinConfirm] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const commitNumber = (
     text: string,
@@ -113,34 +114,37 @@ export const SettingsScreen: React.FC = () => {
         <Text style={styles.h1}>{t('settings.title')}</Text>
 
         <Section title={t('settings.profile')} colors={colors}>
-          <Text style={styles.rowLabel}>{t('settings.name')}</Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            onBlur={() => {
-              if (name.trim() !== data.profile.name) {
-                void updateProfile({ name: name.trim() });
-              }
-            }}
-            style={[styles.input, { marginTop: 8 }]}
-            placeholder={t('settings.namePlaceholder')}
-            placeholderTextColor={colors.textMuted}
-          />
+          <View style={styles.compactRow}>
+            <Text style={styles.compactLabel}>{t('settings.name')}</Text>
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              onBlur={() => {
+                if (name.trim() !== data.profile.name) {
+                  void updateProfile({ name: name.trim() });
+                }
+              }}
+              style={styles.compactInput}
+              placeholder={t('settings.namePlaceholder')}
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
           {data.profile.birthdate ? (
-            <Text style={[styles.rowLabel, { marginTop: 12, color: colors.textMuted, fontSize: 13 }]}>
-              {t('settings.birthdate')}: {data.profile.birthdate}
-            </Text>
+            <View style={styles.compactRow}>
+              <Text style={styles.compactLabel}>{t('settings.birthdate')}</Text>
+              <Text style={styles.compactValue}>{data.profile.birthdate}</Text>
+            </View>
           ) : null}
         </Section>
 
         <Section title={t('settings.cycleSetup')} colors={colors}>
           <Pressable
-            style={styles.actionBtn}
+            style={styles.subtleBtn}
             onPress={() => navigation.navigate('CycleWizard')}
           >
-            <Text style={styles.actionBtnText}>{t('settings.openCycleWizard')}</Text>
+            <Text style={styles.subtleBtnText}>{t('settings.openCycleWizard')}</Text>
           </Pressable>
-          <Text style={[styles.rowLabel, { marginTop: 12, color: colors.textMuted, fontSize: 13 }]}>
+          <Text style={styles.cycleHint}>
             {t('settings.cycleSetupHint')}
           </Text>
         </Section>
@@ -275,47 +279,92 @@ export const SettingsScreen: React.FC = () => {
           )}
         </Section>
 
-        <Section title={t('settings.averageCycleLength')} colors={colors}>
-          <TextInput
-            value={cycleLen}
-            onChangeText={setCycleLen}
-            onBlur={() =>
-              setCycleLen(
-                commitNumber(cycleLen, 'averageCycleLength', 28, 15, 60),
-              )
-            }
-            keyboardType="number-pad"
-            style={styles.input}
-          />
-        </Section>
-
-        <Section title={t('settings.averagePeriodLength')} colors={colors}>
-          <TextInput
-            value={periodLen}
-            onChangeText={setPeriodLen}
-            onBlur={() =>
-              setPeriodLen(
-                commitNumber(periodLen, 'averagePeriodLength', 5, 1, 14),
-              )
-            }
-            keyboardType="number-pad"
-            style={styles.input}
-          />
-        </Section>
-
-        <Section title={t('settings.lutealPhase')} colors={colors}>
-          <TextInput
-            value={lutealLen}
-            onChangeText={setLutealLen}
-            onBlur={() =>
-              setLutealLen(
-                commitNumber(lutealLen, 'lutealPhaseLength', 14, 9, 17),
-              )
-            }
-            keyboardType="number-pad"
-            style={styles.input}
-          />
-        </Section>
+        <View style={styles.section}>
+          <Pressable
+            style={styles.advancedHeader}
+            onPress={() => setAdvancedOpen((v) => !v)}
+            hitSlop={8}
+          >
+            <Text style={styles.sectionTitle}>
+              {t('settings.advancedCycle')}
+            </Text>
+            <Text style={styles.advancedToggle}>
+              {advancedOpen
+                ? t('settings.advancedCycleCollapse')
+                : t('settings.advancedCycleExpand')}
+            </Text>
+          </Pressable>
+          {advancedOpen ? (
+            <View style={styles.sectionBody}>
+              <Text style={styles.cycleHint}>
+                {t('settings.advancedCycleHint')}
+              </Text>
+              <View style={[styles.compactRow, { marginTop: 8 }]}>
+                <Text style={styles.compactLabel}>
+                  {t('settings.avgCycleShort')}
+                </Text>
+                <View style={styles.numberInputWrap}>
+                  <TextInput
+                    value={cycleLen}
+                    onChangeText={setCycleLen}
+                    onBlur={() =>
+                      setCycleLen(
+                        commitNumber(cycleLen, 'averageCycleLength', 28, 15, 60),
+                      )
+                    }
+                    keyboardType="number-pad"
+                    style={styles.numberInput}
+                  />
+                  <Text style={styles.numberSuffix}>
+                    {t('settings.daysSuffix')}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.compactRow}>
+                <Text style={styles.compactLabel}>
+                  {t('settings.avgPeriodShort')}
+                </Text>
+                <View style={styles.numberInputWrap}>
+                  <TextInput
+                    value={periodLen}
+                    onChangeText={setPeriodLen}
+                    onBlur={() =>
+                      setPeriodLen(
+                        commitNumber(periodLen, 'averagePeriodLength', 5, 1, 14),
+                      )
+                    }
+                    keyboardType="number-pad"
+                    style={styles.numberInput}
+                  />
+                  <Text style={styles.numberSuffix}>
+                    {t('settings.daysSuffix')}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.compactRow}>
+                <Text style={styles.compactLabel}>
+                  {t('settings.lutealShort')}
+                </Text>
+                <View style={styles.numberInputWrap}>
+                  <TextInput
+                    value={lutealLen}
+                    onChangeText={setLutealLen}
+                    onBlur={() =>
+                      setLutealLen(
+                        commitNumber(lutealLen, 'lutealPhaseLength', 14, 9, 17),
+                      )
+                    }
+                    keyboardType="number-pad"
+                    style={styles.numberInput}
+                  />
+                  <Text style={styles.numberSuffix}>
+                    {t('settings.daysSuffix')}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+        </View>
 
         <Section title={t('settings.language')} colors={colors}>
           <View style={styles.chipRow}>
@@ -463,6 +512,89 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 16,
       color: colors.text,
       backgroundColor: colors.surface,
+    },
+    advancedHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    advancedToggle: {
+      color: colors.primary,
+      fontSize: 12,
+      fontWeight: '600',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    compactRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 6,
+    },
+    compactLabel: {
+      color: colors.textMuted,
+      fontSize: 14,
+      flexShrink: 0,
+    },
+    compactValue: {
+      color: colors.text,
+      fontSize: 14,
+      fontWeight: '500',
+      maxWidth: '60%',
+      textAlign: 'right',
+    },
+    compactInput: {
+      flex: 1,
+      marginLeft: 16,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 10,
+      fontSize: 15,
+      color: colors.text,
+      backgroundColor: colors.surface,
+      textAlign: 'right',
+    },
+    numberInputWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    numberInput: {
+      width: 56,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 10,
+      fontSize: 15,
+      color: colors.text,
+      backgroundColor: colors.surface,
+      textAlign: 'center',
+    },
+    numberSuffix: {
+      color: colors.textMuted,
+      fontSize: 13,
+      minWidth: 26,
+    },
+    subtleBtn: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    subtleBtnText: {
+      color: colors.text,
+      fontWeight: '600',
+      fontSize: 14,
+      letterSpacing: 0.2,
+    },
+    cycleHint: {
+      color: colors.textMuted,
+      fontSize: 12,
+      lineHeight: 17,
+      marginTop: 8,
     },
     chipRow: { flexDirection: 'row', flexWrap: 'wrap' },
     chip: {
