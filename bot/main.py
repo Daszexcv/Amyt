@@ -50,6 +50,11 @@ async def init_db() -> None:
 
 async def main() -> None:
     settings = get_settings()
+    if not settings.bot_token:
+        raise RuntimeError(
+            "BOT_TOKEN is required to run the Telegram bot. "
+            "Set it in bot/.env or your environment."
+        )
     await init_db()
     bot = Bot(
         token=settings.bot_token,

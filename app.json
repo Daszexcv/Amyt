@@ -39,7 +39,8 @@
       "eas": {
         "projectId": "8ae94582-7b2b-4ec5-bbcc-37dff247f4a5"
       },
-      "activationApiUrl": "https://flowcare-api.example.com"
+      "activationApiUrl": "https://lira-flowcare-vfaonddx.fly.dev",
+      "botUsername": "lowerBsk24_bot"
     },
     "owner": "ivan_bulychev",
     "runtimeVersion": {

@@ -7,6 +7,7 @@ from bot.models.activation_code import ActivationCode
 from bot.models.catalog import CatalogItem, CatalogTag
 from bot.models.order import Order, OrderStatus
 from bot.models.delivery_history import DeliveryHistory
+from bot.models.pairing_token import PairingToken
 
 __all__ = [
     "Base",
@@ -20,4 +21,5 @@ __all__ = [
     "Order",
     "OrderStatus",
     "DeliveryHistory",
+    "PairingToken",
 ]

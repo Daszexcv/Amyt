@@ -172,6 +172,7 @@ export const SubscriptionScreen: React.FC = () => {
     cycleSyncCode,
     autoSyncStatus,
     refreshAutoSync,
+    pairing,
   } = useSubscription();
   const navigation = useNavigation<Nav>();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -247,6 +248,27 @@ export const SubscriptionScreen: React.FC = () => {
     const url = 'https://t.me/lowerBsk24_bot?start=premium';
     Linking.openURL(url).catch(() => {
       Alert.alert('Не получилось открыть Telegram', url);
+    });
+  };
+
+  const onPairTelegram = async () => {
+    const res = await pairing.start();
+    if (!res.ok) {
+      Alert.alert(
+        'Не удалось связаться с сервером',
+        'Проверь интернет и попробуй ещё раз.',
+      );
+      return;
+    }
+    Linking.openURL(res.deepLink).catch(() => {
+      Alert.alert('Не получилось открыть Telegram', res.deepLink);
+    });
+  };
+
+  const onReopenPair = () => {
+    if (!pairing.deepLink) return;
+    Linking.openURL(pairing.deepLink).catch(() => {
+      Alert.alert('Не получилось открыть Telegram', pairing.deepLink ?? '');
     });
   };
 
@@ -408,6 +430,103 @@ export const SubscriptionScreen: React.FC = () => {
               Сначала отметь день начала последних месячных в календаре или на
               экране «Сегодня». Тогда здесь появится твой код.
             </Text>
+          )}
+        </View>
+
+        <View style={styles.codeCard}>
+          <Text style={styles.codeTitle}>Привязать Telegram</Text>
+          <Text style={styles.codeHint}>
+            Один тап вместо ввода кода: жми кнопку, открой бот, нажми{' '}
+            «Старт» — и подписка подтянется автоматически. Если её ещё
+            нет — подтянется, как только оплатишь в боте.
+          </Text>
+
+          {pairing.status === 'paired' ? (
+            <Text style={[styles.codeHint, styles.pairOk]}>
+              Готово. Аккаунт{' '}
+              {pairing.telegramUsername
+                ? `@${pairing.telegramUsername} `
+                : ''}
+              привязан, подписка активирована.
+            </Text>
+          ) : pairing.status === 'paired_no_subscription' ? (
+            <Text style={[styles.codeHint, styles.pairOk]}>
+              Аккаунт{' '}
+              {pairing.telegramUsername
+                ? `@${pairing.telegramUsername} `
+                : ''}
+              привязан. Активной подписки пока нет — оплати в боте, и она
+              подтянется.
+            </Text>
+          ) : pairing.status === 'awaiting_user' ? (
+            <Text style={styles.codeHint}>
+              Жду подтверждения от бота. Открой Telegram и нажми «Старт» в
+              чате с ботом.
+            </Text>
+          ) : pairing.status === 'expired' ? (
+            <Text style={[styles.codeHint, styles.pairWarn]}>
+              Ссылка устарела. Жми кнопку ниже, чтобы получить новую.
+            </Text>
+          ) : pairing.status === 'error' ? (
+            <Text style={[styles.codeHint, styles.pairWarn]}>
+              Не удалось связаться с сервером. Проверь интернет и попробуй
+              снова.
+            </Text>
+          ) : null}
+
+          {pairing.status === 'awaiting_user' ? (
+            <>
+              <Pressable
+                style={[styles.activateButton, { marginTop: 12 }]}
+                onPress={onReopenPair}
+              >
+                <Text style={styles.activateButtonText}>
+                  Открыть бот ещё раз
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.activateButton,
+                  {
+                    marginTop: 10,
+                    backgroundColor: 'transparent',
+                    borderWidth: 1,
+                    borderColor: BUTTON_ACCENT,
+                  },
+                ]}
+                onPress={() => pairing.cancel()}
+              >
+                <Text
+                  style={[
+                    styles.activateButtonText,
+                    { color: BUTTON_ACCENT },
+                  ]}
+                >
+                  Отменить
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              style={[
+                styles.activateButton,
+                pairing.status === 'requesting' && { opacity: 0.6 },
+              ]}
+              onPress={onPairTelegram}
+              disabled={pairing.status === 'requesting'}
+            >
+              <Text style={styles.activateButtonText}>
+                {pairing.status === 'requesting'
+                  ? 'Готовлю ссылку…'
+                  : pairing.status === 'paired' ||
+                      pairing.status === 'paired_no_subscription'
+                    ? 'Привязать заново'
+                    : pairing.status === 'expired' ||
+                        pairing.status === 'error'
+                      ? 'Попробовать снова'
+                      : 'Привязать Telegram'}
+              </Text>
+            </Pressable>
           )}
         </View>
 
@@ -706,5 +825,15 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 13,
       color: colors.textMuted,
       textDecorationLine: 'underline',
+    },
+    pairOk: {
+      marginTop: 12,
+      color: '#3F8E5C',
+      fontWeight: '600',
+    },
+    pairWarn: {
+      marginTop: 12,
+      color: '#B26A3F',
+      fontWeight: '600',
     },
   });

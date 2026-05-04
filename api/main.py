@@ -1,46 +1,124 @@
-"""FastAPI app exposing /v1/activate for the Flow mobile/web app.
+"""FastAPI app exposing the Lira ↔ FlowCare integration endpoints.
 
-The bot writes activation_codes after a paid subscription; the app
-posts the user-entered code here. We return validity, tariff, and
-expiry so the app can flip the local subscription banner.
+Endpoints
+---------
+
+* ``POST /v1/activate`` — legacy activation-code redemption (kept as
+  fallback for users who have not paired via Telegram).
+* ``GET  /v1/subscription?cycle_code=...`` — auto-sync lookup by the
+  cycle-sync code already stored on the user's profile.
+* ``POST /v1/pair/init`` — issue a fresh pairing token. The Lira app
+  opens ``t.me/<bot>?start=link_<token>`` in Telegram; the bot's
+  ``/start link_<token>`` handler binds the token to the calling
+  Telegram user. The app then polls ``GET /v1/pair/<token>`` to learn
+  who claimed the token and what their active subscription is.
 """
 from __future__ import annotations
 
 import logging
+import asyncio
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
-
 from datetime import timezone
+from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from bot.config import get_settings
 from bot.db import engine, session_scope
-from bot.models import Base
-from bot.services.catalog import seed_catalog
+from bot.models import Base, User
 from bot.services.codes import redeem_code
-from bot.services.subscriptions import find_active_subscription_by_cycle_code
+from bot.services.pairing import (
+    create_pair_token,
+    find_pair_token,
+    is_expired,
+)
+from bot.services.subscriptions import (
+    canonicalise_cycle_code,
+    find_active_subscription_by_cycle_code,
+    get_active_subscription,
+)
 
 log = logging.getLogger("flowcare-api")
 logging.basicConfig(level=logging.INFO)
+
+
+async def _run_bot_polling() -> None:
+    """Run the aiogram long-polling bot inside the FastAPI process.
+
+    Co-locating the bot and the API in the same process means they share
+    the SQLite database on the persistent volume — pairing tokens written
+    by the bot's ``/start link_<token>`` handler are immediately visible
+    to ``GET /v1/pair/<token>`` calls. Skipped when ``BOT_TOKEN`` is
+    empty (e.g. local API dev or first Fly deploy before secrets are
+    configured).
+    """
+    settings = get_settings()
+    if not settings.bot_token:
+        log.info("BOT_TOKEN unset — bot polling not started")
+        return
+    from aiogram import Bot, Dispatcher
+    from aiogram.client.default import DefaultBotProperties
+
+    from bot.handlers import router as root_router
+
+    bot = Bot(
+        token=settings.bot_token,
+        default=DefaultBotProperties(parse_mode=None),
+    )
+    dp = Dispatcher()
+    dp.include_router(root_router)
+    log.info("Starting Telegram bot polling…")
+    try:
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    finally:
+        await bot.session.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    async with session_scope() as session:
-        await seed_catalog(session)
-    yield
+    settings = get_settings()
+    if settings.bot_token:
+        # Catalog seeding is bot-only (used to assemble subscription
+        # boxes); skip it for api-only deploys to keep memory low.
+        from bot.services.catalog import seed_catalog
+
+        async with session_scope() as session:
+            await seed_catalog(session)
+        bot_task: asyncio.Task[None] | None = asyncio.create_task(
+            _run_bot_polling()
+        )
+    else:
+        bot_task = None
+    try:
+        yield
+    finally:
+        if bot_task is not None:
+            bot_task.cancel()
+            try:
+                await bot_task
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 app = FastAPI(
     title="FlowCare Activation API",
-    version="1.0.0",
-    description="Validates activation codes issued by the FlowCare Telegram bot.",
+    version="1.1.0",
+    description=(
+        "Validates activation codes issued by the FlowCare Telegram bot, "
+        "auto-syncs subscriptions by cycle-code, and powers the "
+        "Telegram-pairing flow that replaces the activation code with a "
+        "single deep-link tap."
+    ),
     lifespan=lifespan,
 )
+
+
+# ---------------------------------------------------------------------- #
+# /v1/activate — activation-code fallback                                  #
+# ---------------------------------------------------------------------- #
 
 
 class ActivateIn(BaseModel):
@@ -70,42 +148,106 @@ async def activate(body: ActivateIn) -> ActivateOut:
     )
 
 
-class SubscriptionLookupOut(BaseModel):
+# ---------------------------------------------------------------------- #
+# /v1/subscription?cycle_code=... — auto-sync via cycle-code               #
+# ---------------------------------------------------------------------- #
+
+
+class SubscriptionOut(BaseModel):
     valid: bool
     tariff: str | None = None
     expires: str | None = None
-    started_at: str | None = None
 
 
-@app.get("/v1/subscription", response_model=SubscriptionLookupOut)
+@app.get("/v1/subscription", response_model=SubscriptionOut)
 async def subscription_by_cycle_code(
-    cycle_code: str = Query(
-        ...,
-        min_length=4,
-        max_length=16,
-        description=(
-            "The 8-char cycle-sync code generated by the Lira app. "
-            "Used to look up the active subscription bound to the user "
-            "who previously sent /sync <code> to the bot."
-        ),
-    ),
-) -> SubscriptionLookupOut:
+    cycle_code: str = Query(..., min_length=4, max_length=16),
+) -> SubscriptionOut:
+    canonical = canonicalise_cycle_code(cycle_code)
+    if canonical is None:
+        return SubscriptionOut(valid=False)
     async with session_scope() as session:
-        sub = await find_active_subscription_by_cycle_code(session, cycle_code)
+        sub = await find_active_subscription_by_cycle_code(session, canonical)
     if sub is None:
-        return SubscriptionLookupOut(valid=False)
-    expires_dt = sub.expires_at
-    if expires_dt.tzinfo is None:
-        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
-    started_dt = sub.started_at
-    if started_dt.tzinfo is None:
-        started_dt = started_dt.replace(tzinfo=timezone.utc)
-    return SubscriptionLookupOut(
+        return SubscriptionOut(valid=False)
+    return SubscriptionOut(
         valid=True,
         tariff=sub.tariff.value,
-        expires=expires_dt.date().isoformat(),
-        started_at=started_dt.date().isoformat(),
+        expires=sub.expires_at.date().isoformat(),
     )
+
+
+# ---------------------------------------------------------------------- #
+# /v1/pair/* — Telegram deep-link pairing                                  #
+# ---------------------------------------------------------------------- #
+
+
+class PairInitOut(BaseModel):
+    token: str
+    expires_at: str
+    deep_link: str
+
+
+class PairStatusOut(BaseModel):
+    paired: bool
+    expired: bool = False
+    tariff: str | None = None
+    expires: str | None = None
+    telegram_username: str | None = None
+
+
+def _bot_deep_link(token: str) -> str:
+    """Build the Telegram deep-link the app should open."""
+    settings = get_settings()
+    username = (getattr(settings, "bot_username", None) or "").lstrip("@")
+    if not username:
+        # Fall back to a hard-coded slot the app overrides in app.json.
+        username = "lowerBsk24_bot"
+    return f"https://t.me/{username}?start=link_{token}"
+
+
+@app.post("/v1/pair/init", response_model=PairInitOut)
+async def pair_init() -> PairInitOut:
+    async with session_scope() as session:
+        tok = await create_pair_token(session)
+        expires = tok.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return PairInitOut(
+        token=tok.token,
+        expires_at=expires.isoformat(),
+        deep_link=_bot_deep_link(tok.token),
+    )
+
+
+@app.get("/v1/pair/{token}", response_model=PairStatusOut)
+async def pair_status(token: str) -> PairStatusOut:
+    if len(token) > 64:
+        raise HTTPException(status_code=400, detail="token too long")
+    async with session_scope() as session:
+        row = await find_pair_token(session, token)
+        if row is None:
+            return PairStatusOut(paired=False, expired=False)
+        if is_expired(row) and row.claimed_user_id is None:
+            return PairStatusOut(paired=False, expired=True)
+        if row.claimed_user_id is None:
+            return PairStatusOut(paired=False, expired=False)
+        user = await session.get(User, row.claimed_user_id)
+        sub = await get_active_subscription(session, user) if user else None
+    out = PairStatusOut(
+        paired=True,
+        expired=False,
+        telegram_username=user.username if user else None,
+    )
+    if sub is not None:
+        out.tariff = sub.tariff.value
+        out.expires = sub.expires_at.date().isoformat()
+    return out
+
+
+# ---------------------------------------------------------------------- #
+# Health                                                                   #
+# ---------------------------------------------------------------------- #
 
 
 @app.get("/health")

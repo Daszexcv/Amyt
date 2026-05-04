@@ -1,11 +1,22 @@
 """Runtime configuration loaded from environment variables / .env."""
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from pydantic import BeforeValidator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Annotated
+
+
+# When deployed on Fly.io a persistent volume is mounted at /data; default
+# the SQLite file to that path so it survives restarts. Locally fall back
+# to a project-relative file so dev works with no env vars set.
+_DEFAULT_DATABASE_URL = (
+    "sqlite+aiosqlite:////data/app.db"
+    if os.path.isdir("/data")
+    else "sqlite+aiosqlite:///./flowcare.db"
+)
 
 
 def _empty_str_to_none(v):
@@ -27,17 +38,21 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Telegram
-    bot_token: str = Field(..., alias="BOT_TOKEN")
+    # Telegram. ``bot_token`` is required for ``bot/main.py`` (long-polling
+    # entrypoint) but the FastAPI ``api/`` package can boot without it —
+    # default to empty string so api-only Fly deploys don't crash on import.
+    bot_token: str = Field(default="", alias="BOT_TOKEN")
+    bot_username: OptionalStr = Field(default=None, alias="BOT_USERNAME")
     admin_chat_id: OptionalInt = Field(default=None, alias="ADMIN_CHAT_ID")
     assembly_chat_id: OptionalInt = Field(default=None, alias="ASSEMBLY_CHAT_ID")
     payment_provider_token: OptionalStr = Field(
         default=None, alias="PAYMENT_PROVIDER_TOKEN"
     )
 
-    # Database (default: local SQLite for dev; Postgres URL in docker-compose)
+    # Database (default: local SQLite for dev / Fly volume in prod; Postgres
+    # URL in docker-compose).
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./flowcare.db",
+        default=_DEFAULT_DATABASE_URL,
         alias="DATABASE_URL",
     )
 

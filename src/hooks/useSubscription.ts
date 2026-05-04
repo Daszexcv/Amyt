@@ -5,6 +5,12 @@ import { findPeriodStarts } from '../cycle';
 import { encodeCycleCode } from '../cycleCode';
 import { DEFAULT_SUBSCRIPTION, Subscription, SubscriptionTier } from '../types';
 import { activateCode, fetchSubscriptionByCycleCode } from '../utils/activation';
+import {
+  PairInitResponse,
+  PairStatusResponse,
+  fetchPairStatus,
+  initPair,
+} from '../utils/pairing';
 
 export type SubscriptionType = 'premium' | 'basic_box' | 'vip_box' | 'none';
 
@@ -46,6 +52,34 @@ export interface UseSubscriptionApi {
     | { ok: true; tier: SubscriptionTier; expires: string }
     | { ok: false; reason: 'empty' | 'invalid' | 'network' }
   >;
+  /**
+   * Telegram-pairing flow. Replaces the activation code with a single
+   * deep-link tap. Returns the deep-link URL the caller should open; the
+   * hook starts polling internally until the bot claims the token or the
+   * polling window expires.
+   */
+  pairing: PairingApi;
+}
+
+export type PairingStatus =
+  | 'idle'
+  | 'requesting'
+  | 'awaiting_user'
+  | 'paired_no_subscription'
+  | 'paired'
+  | 'expired'
+  | 'error';
+
+export interface PairingApi {
+  status: PairingStatus;
+  /** Deep link returned by the latest /v1/pair/init call. */
+  deepLink: string | null;
+  /** Telegram username of the user who claimed, after a successful pair. */
+  telegramUsername: string | null;
+  /** Start a new pairing attempt. Returns the deep-link to open. */
+  start: () => Promise<{ ok: true; deepLink: string } | { ok: false }>;
+  /** Cancel an in-flight polling loop. */
+  cancel: () => void;
 }
 
 const isActiveNow = (sub: Subscription, now = new Date()): boolean => {
@@ -226,6 +260,114 @@ export const useSubscription = (): UseSubscriptionApi => {
     [updateSubscription],
   );
 
+  // ---- Telegram pairing ------------------------------------------------ //
+
+  const [pairingStatus, setPairingStatus] = useState<PairingStatus>('idle');
+  const [pairingDeepLink, setPairingDeepLink] = useState<string | null>(null);
+  const [pairingTelegramUsername, setPairingTelegramUsername] = useState<
+    string | null
+  >(null);
+  const pairingPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pairingCancelled = useRef(false);
+
+  const clearPairingTimer = useCallback(() => {
+    if (pairingPollTimer.current) {
+      clearTimeout(pairingPollTimer.current);
+      pairingPollTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearPairingTimer(), [clearPairingTimer]);
+
+  const writeSubscriptionFromPair = useCallback(
+    async (status: PairStatusResponse) => {
+      if (!status.tariff || !status.expires) return;
+      const renewsAtIso = `${status.expires}T00:00:00.000Z`;
+      const nowIso = new Date().toISOString();
+      await updateSubscription({
+        tier: status.tariff,
+        productId: productIdFor(status.tariff),
+        startedAt: nowIso,
+        renewsAt: renewsAtIso,
+        cancelled: false,
+        lastSyncedAt: nowIso,
+        activationCode: sub.activationCode ?? null,
+      });
+    },
+    [sub.activationCode, updateSubscription],
+  );
+
+  const pollPairUntilClaim = useCallback(
+    (token: string, deadlineMs: number) => {
+      const tick = async () => {
+        if (pairingCancelled.current) return;
+        const remaining = deadlineMs - Date.now();
+        if (remaining <= 0) {
+          setPairingStatus('expired');
+          return;
+        }
+        let res: PairStatusResponse;
+        try {
+          res = await fetchPairStatus(token);
+        } catch {
+          setPairingStatus('error');
+          return;
+        }
+        if (pairingCancelled.current) return;
+        if (res.expired && !res.paired) {
+          setPairingStatus('expired');
+          return;
+        }
+        if (res.paired) {
+          setPairingTelegramUsername(res.telegram_username ?? null);
+          if (res.tariff && res.expires) {
+            await writeSubscriptionFromPair(res);
+            setPairingStatus('paired');
+          } else {
+            setPairingStatus('paired_no_subscription');
+          }
+          return;
+        }
+        pairingPollTimer.current = setTimeout(() => void tick(), 2000);
+      };
+      void tick();
+    },
+    [writeSubscriptionFromPair],
+  );
+
+  const startPairing = useCallback<PairingApi['start']>(async () => {
+    pairingCancelled.current = false;
+    clearPairingTimer();
+    setPairingStatus('requesting');
+    setPairingTelegramUsername(null);
+    let init: PairInitResponse;
+    try {
+      init = await initPair();
+    } catch {
+      setPairingStatus('error');
+      return { ok: false };
+    }
+    setPairingDeepLink(init.deep_link);
+    setPairingStatus('awaiting_user');
+    // Poll for up to 5 minutes (longer than the bot-side TOKEN_TTL of
+    // 15 min, but short enough that an abandoned attempt eventually times
+    // out client-side).
+    const deadlineMs = Date.now() + 5 * 60 * 1000;
+    pollPairUntilClaim(init.token, deadlineMs);
+    return { ok: true, deepLink: init.deep_link };
+  }, [clearPairingTimer, pollPairUntilClaim]);
+
+  const cancelPairing = useCallback<PairingApi['cancel']>(() => {
+    pairingCancelled.current = true;
+    clearPairingTimer();
+    if (
+      pairingStatus === 'awaiting_user' ||
+      pairingStatus === 'requesting'
+    ) {
+      setPairingStatus('idle');
+    }
+  }, [clearPairingTimer, pairingStatus]);
+
   const active = isActiveNow(sub);
   const isBasic = active && sub.tier === 'basic';
   const isVip = active && sub.tier === 'vip';
@@ -257,5 +399,12 @@ export const useSubscription = (): UseSubscriptionApi => {
     lastAutoSyncAt,
     refreshAutoSync,
     activate,
+    pairing: {
+      status: pairingStatus,
+      deepLink: pairingDeepLink,
+      telegramUsername: pairingTelegramUsername,
+      start: startPairing,
+      cancel: cancelPairing,
+    },
   };
 };
