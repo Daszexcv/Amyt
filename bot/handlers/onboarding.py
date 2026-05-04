@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, Message
 from bot.db import session_scope
 from bot.keyboards.common import multi_choice, single_choice, yes_no, confirm_keyboard
 from bot.services.admin_notify import notify_admin_full_profile
-from bot.services.cycle_code import decode_cycle_code
+from bot.services.cycle_code import decode_cycle_code, encode_cycle_code
 from bot.services.users import get_or_create_profile, get_or_create_user
 from bot.states import Onboarding
 
@@ -203,10 +203,11 @@ async def step_flow_code(message: Message, state: FSMContext) -> None:
     payload = decode_cycle_code(raw)
     if payload is not None:
         # Valid sync code → skip cycle/period questions and jump to step 2.
+        canonical = encode_cycle_code(payload)
         await _save_field(
             message,
-            flow_app_code=raw.upper(),
-            cycle_sync_code=raw.upper(),
+            flow_app_code=canonical,
+            cycle_sync_code=canonical,
             last_period_start=payload.start_date,
             cycle_length_days=payload.cycle_length,
             period_length_days=payload.period_length,

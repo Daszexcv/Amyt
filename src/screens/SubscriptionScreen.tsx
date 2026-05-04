@@ -17,8 +17,6 @@ import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 import { useApp } from '../AppContext';
-import { findPeriodStarts } from '../cycle';
-import { encodeCycleCode } from '../cycleCode';
 import { useSubscription } from '../hooks/useSubscription';
 import { RootStackParamList } from '../navigation';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
@@ -171,41 +169,46 @@ export const SubscriptionScreen: React.FC = () => {
     isPremium,
     daysLeft,
     activate,
+    cycleSyncCode,
+    autoSyncStatus,
+    refreshAutoSync,
   } = useSubscription();
   const navigation = useNavigation<Nav>();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showManualCode, setShowManualCode] = useState(false);
+
+  const lastPeriodStart = useMemo<string | null>(() => {
+    // Pick the latest period start out of the local logs to display the
+    // human-readable «X → Y» date hint next to the cycle-sync code.
+    const dates = Object.keys(data.logs).sort();
+    for (let i = dates.length - 1; i >= 0; i--) {
+      const log = data.logs[dates[i]];
+      const flow = log?.flow;
+      if (flow && flow !== 'none') return dates[i];
+    }
+    return null;
+  }, [data.logs]);
 
   const syncInfo = useMemo(() => {
-    const starts = findPeriodStarts(data.logs);
-    const startDate = starts.length > 0 ? starts[starts.length - 1] : null;
-    if (!startDate) return null;
-    try {
-      const code = encodeCycleCode({
-        startDate,
-        cycleLength: data.settings.averageCycleLength,
-        periodLength: data.settings.averagePeriodLength,
-      });
-      const periodLength = Math.max(1, data.settings.averagePeriodLength);
-      const endIso = (() => {
-        const d = new Date(`${startDate}T00:00:00Z`);
-        d.setUTCDate(d.getUTCDate() + periodLength - 1);
-        return d.toISOString().slice(0, 10);
-      })();
-      const fmtDate = (iso: string) => {
-        const [y, m, day] = iso.split('-');
-        return `${day}.${m}.${y}`;
-      };
-      return {
-        code,
-        startLabel: fmtDate(startDate),
-        endLabel: fmtDate(endIso),
-      };
-    } catch {
-      return null;
-    }
-  }, [data.logs, data.settings.averageCycleLength, data.settings.averagePeriodLength]);
+    if (!cycleSyncCode || !lastPeriodStart) return null;
+    const periodLength = Math.max(1, data.settings.averagePeriodLength);
+    const endIso = (() => {
+      const d = new Date(`${lastPeriodStart}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + periodLength - 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    const fmtDate = (iso: string) => {
+      const [y, m, day] = iso.split('-');
+      return `${day}.${m}.${y}`;
+    };
+    return {
+      code: cycleSyncCode,
+      startLabel: fmtDate(lastPeriodStart),
+      endLabel: fmtDate(endIso),
+    };
+  }, [cycleSyncCode, lastPeriodStart, data.settings.averagePeriodLength]);
   const syncCode = syncInfo?.code ?? null;
 
   const copySyncCode = async () => {
@@ -354,6 +357,30 @@ export const SubscriptionScreen: React.FC = () => {
               <Text style={[styles.codeHint, { textAlign: 'center', marginTop: 8 }]}>
                 Месячные: {syncInfo.startLabel} → {syncInfo.endLabel}
               </Text>
+              <View style={styles.autoSyncRow}>
+                <Text style={styles.autoSyncLabel}>
+                  {autoSyncStatus === 'matched'
+                    ? 'Подписка подтянулась автоматически.'
+                    : autoSyncStatus === 'syncing'
+                      ? 'Проверяем подписку…'
+                      : autoSyncStatus === 'unmatched'
+                        ? 'Подписку не нашли. Если уже оплатил(а) — отправь боту /sync с этим кодом.'
+                        : autoSyncStatus === 'error'
+                          ? 'Не удалось связаться с сервером. Попробуй ещё раз.'
+                          : 'Подписка подтянется автоматически после оплаты в боте.'}
+                </Text>
+                <Pressable
+                  style={styles.autoSyncRefreshButton}
+                  onPress={() => {
+                    void refreshAutoSync();
+                  }}
+                  disabled={autoSyncStatus === 'syncing'}
+                >
+                  <Text style={styles.autoSyncRefreshText}>
+                    {autoSyncStatus === 'syncing' ? '…' : 'Обновить'}
+                  </Text>
+                </Pressable>
+              </View>
               <Pressable style={styles.activateButton} onPress={copySyncCode}>
                 <Text style={styles.activateButtonText}>
                   Скопировать код
@@ -384,29 +411,42 @@ export const SubscriptionScreen: React.FC = () => {
           )}
         </View>
 
-        <View style={styles.codeCard}>
-          <Text style={styles.codeTitle}>Код активации</Text>
-          <Text style={styles.codeHint}>
-            Бот пришлёт его после оплаты. Введи код, чтобы активировать подписку в приложении.
+        <Pressable
+          onPress={() => setShowManualCode((v) => !v)}
+          style={styles.fallbackToggle}
+        >
+          <Text style={styles.fallbackToggleText}>
+            {showManualCode
+              ? 'Скрыть ручной ввод кода'
+              : 'Подписка не подтянулась? Ввести код вручную'}
           </Text>
-          <TextInput
-            style={styles.codeInput}
-            placeholder="Например, A7K9TXM2"
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            value={code}
-            onChangeText={(value) => setCode(value.toUpperCase())}
-            editable={!submitting}
-          />
-          <Pressable
-            style={[styles.activateButton, submitting && { opacity: 0.6 }]}
-            onPress={onActivate}
-            disabled={submitting}
-          >
-            <Text style={styles.activateButtonText}>Активировать</Text>
-          </Pressable>
-        </View>
+        </Pressable>
+        {showManualCode ? (
+          <View style={styles.codeCard}>
+            <Text style={styles.codeTitle}>Код активации (запасной)</Text>
+            <Text style={styles.codeHint}>
+              Используй, если auto-sync не подтянул подписку. Бот пришлёт код
+              после оплаты, либо запроси командой /code в чате с ботом.
+            </Text>
+            <TextInput
+              style={styles.codeInput}
+              placeholder="Например, A7K9TXM2"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              value={code}
+              onChangeText={(value) => setCode(value.toUpperCase())}
+              editable={!submitting}
+            />
+            <Pressable
+              style={[styles.activateButton, submitting && { opacity: 0.6 }]}
+              onPress={onActivate}
+              disabled={submitting}
+            >
+              <Text style={styles.activateButtonText}>Активировать</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -630,5 +670,41 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 22,
       fontWeight: '700',
       letterSpacing: 4,
+    },
+    autoSyncRow: {
+      marginTop: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    autoSyncLabel: {
+      flex: 1,
+      fontSize: 13,
+      lineHeight: 18,
+      color: colors.textMuted,
+    },
+    autoSyncRefreshButton: {
+      borderWidth: 1,
+      borderColor: BUTTON_ACCENT,
+      borderRadius: 14,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+    },
+    autoSyncRefreshText: {
+      color: BUTTON_ACCENT,
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    fallbackToggle: {
+      marginTop: 6,
+      marginBottom: 8,
+      paddingVertical: 10,
+      alignItems: 'center',
+    },
+    fallbackToggleText: {
+      fontSize: 13,
+      color: colors.textMuted,
+      textDecorationLine: 'underline',
     },
   });

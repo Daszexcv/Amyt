@@ -14,7 +14,7 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message
 
 from bot.db import session_scope
-from bot.services.cycle_code import decode_cycle_code
+from bot.services.cycle_code import decode_cycle_code, encode_cycle_code
 from bot.services.users import get_or_create_profile, get_or_create_user
 
 log = logging.getLogger(__name__)
@@ -41,13 +41,14 @@ async def _apply_code(message: Message, code: str) -> None:
 
     if message.from_user is None:
         return
+    canonical = encode_cycle_code(payload)
     async with session_scope() as session:
         user = await get_or_create_user(session, message.from_user)
         profile = await get_or_create_profile(session, user)
         profile.last_period_start = payload.start_date
         profile.cycle_length_days = payload.cycle_length
         profile.period_length_days = payload.period_length
-        profile.cycle_sync_code = code.upper()
+        profile.cycle_sync_code = canonical
 
     period_end = payload.start_date + timedelta(days=max(payload.period_length - 1, 0))
     await message.answer(

@@ -17,6 +17,13 @@ export interface ActivateResponse {
   redeemed_at?: string;
 }
 
+export interface SubscriptionLookupResponse {
+  valid: boolean;
+  tariff?: SubscriptionTier;
+  expires?: string;
+  started_at?: string;
+}
+
 const fallbackBase = 'https://flowcare-api.example.com';
 
 const baseUrl = (): string => {
@@ -46,6 +53,28 @@ export const activateCode = async (
       return { valid: false };
     }
     const json = (await res.json()) as ActivateResponse;
+    return json;
+  } catch {
+    return { valid: false };
+  }
+};
+
+/**
+ * Auto-sync: ask the bot whether the cycle-sync code in our hands is
+ * already bound to a paid subscription. The user runs `/sync XXXX-XXXX`
+ * in the FlowCare bot once; after that the same code unlocks the
+ * subscription on every device automatically.
+ */
+export const fetchSubscriptionByCycleCode = async (
+  cycleCode: string,
+): Promise<SubscriptionLookupResponse> => {
+  const url = `${baseUrl().replace(/\/$/, '')}/v1/subscription?cycle_code=${encodeURIComponent(cycleCode.trim().toUpperCase())}`;
+  try {
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) {
+      return { valid: false };
+    }
+    const json = (await res.json()) as SubscriptionLookupResponse;
     return json;
   } catch {
     return { valid: false };
