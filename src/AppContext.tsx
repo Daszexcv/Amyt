@@ -295,7 +295,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ready,
     predictions,
     data.settings.notifyPrePeriod,
+    data.settings.notifyPeriodStart,
     data.settings.notifyFertile,
+    data.settings.notifyOvulation,
+    data.settings.notifyVitamins,
+    data.settings.notifyVitaminsTime,
     data.settings,
   ]);
 

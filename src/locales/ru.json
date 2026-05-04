@@ -2,6 +2,13 @@
   "app": {
     "title": "Lira"
   },
+  "notifications": {
+    "prePeriodBody": "Месячные начнутся завтра. Положи прокладку в сумку.",
+    "periodStartBody": "По прогнозу — месячные сегодня. Отметь, если началось.",
+    "fertileStartBody": "Сегодня старт фертильного окна.",
+    "ovulationBody": "По прогнозу сегодня овуляция.",
+    "vitaminsBody": "Не забудь принять витамины."
+  },
   "tabs": {
     "today": "Сегодня",
     "calendar": "Календарь",
@@ -220,7 +227,14 @@
     "showFertileWindow": "Показывать фертильное окно",
     "notifications": "Уведомления",
     "notifyPrePeriod": "Напоминать за день до месячных",
+    "notifyPeriodStart": "Напоминать в день старта месячных",
     "notifyFertile": "Напоминать о фертильном окне",
+    "notifyOvulation": "Напоминать в день овуляции",
+    "notifyVitamins": "Ежедневное напоминание о витаминах",
+    "notifyVitaminsTime": "Время напоминания о витаминах",
+    "notifyVitaminsMorning": "Утром · 09:00",
+    "notifyVitaminsAfternoon": "Днём · 14:00",
+    "notifyVitaminsEvening": "Вечером · 20:00",
     "notifyPermissionDenied": "Разреши уведомления в настройках телефона.",
     "notifyUnsupportedWeb": "Уведомления работают только в мобильном приложении.",
     "exportData": "Экспорт данных",

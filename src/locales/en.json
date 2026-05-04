@@ -2,6 +2,13 @@
   "app": {
     "title": "Lira"
   },
+  "notifications": {
+    "prePeriodBody": "Period likely starts tomorrow. Pack a pad just in case.",
+    "periodStartBody": "Period predicted today. Log it if it started.",
+    "fertileStartBody": "Fertile window starts today.",
+    "ovulationBody": "Ovulation predicted for today.",
+    "vitaminsBody": "Time to take your vitamins."
+  },
   "tabs": {
     "today": "Today",
     "calendar": "Calendar",
@@ -220,7 +227,14 @@
     "showFertileWindow": "Show fertile window",
     "notifications": "Notifications",
     "notifyPrePeriod": "Remind me a day before period",
+    "notifyPeriodStart": "Remind me on period start day",
     "notifyFertile": "Remind me about fertile window",
+    "notifyOvulation": "Remind me on ovulation day",
+    "notifyVitamins": "Daily vitamin reminder",
+    "notifyVitaminsTime": "Vitamin reminder time",
+    "notifyVitaminsMorning": "Morning · 09:00",
+    "notifyVitaminsAfternoon": "Afternoon · 14:00",
+    "notifyVitaminsEvening": "Evening · 20:00",
     "notifyPermissionDenied": "Allow notifications in your phone settings.",
     "notifyUnsupportedWeb": "Notifications work in the mobile app only.",
     "exportData": "Export data",

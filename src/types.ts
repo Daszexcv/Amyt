@@ -39,8 +39,18 @@ export interface Settings {
   language: 'auto' | 'en' | 'ru';
   theme: 'auto' | 'light' | 'dark';
   showFertileWindow: boolean;
+  /** Reminder the day before the predicted period start. */
   notifyPrePeriod: boolean;
+  /** Reminder on the predicted period start day itself. */
+  notifyPeriodStart: boolean;
+  /** Reminder on the first day of the fertile window. */
   notifyFertile: boolean;
+  /** Reminder on the predicted ovulation day. */
+  notifyOvulation: boolean;
+  /** Daily reminder for taking vitamins / supplements. */
+  notifyVitamins: boolean;
+  /** Time-of-day for the daily vitamin reminder, formatted as HH:MM (24h). */
+  notifyVitaminsTime: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -51,7 +61,11 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   showFertileWindow: true,
   notifyPrePeriod: false,
+  notifyPeriodStart: false,
   notifyFertile: false,
+  notifyOvulation: false,
+  notifyVitamins: false,
+  notifyVitaminsTime: '09:00',
 };
 
 export interface Profile {

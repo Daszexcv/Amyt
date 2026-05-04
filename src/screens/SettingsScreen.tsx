@@ -376,6 +376,16 @@ export const SettingsScreen: React.FC = () => {
             />
           </View>
           <View style={styles.row}>
+            <Text style={styles.rowLabel}>
+              {t('settings.notifyPeriodStart')}
+            </Text>
+            <Switch
+              value={data.settings.notifyPeriodStart}
+              onValueChange={(v) => updateSettings({ notifyPeriodStart: v })}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+          <View style={styles.row}>
             <Text style={styles.rowLabel}>{t('settings.notifyFertile')}</Text>
             <Switch
               value={data.settings.notifyFertile}
@@ -383,6 +393,66 @@ export const SettingsScreen: React.FC = () => {
               trackColor={{ true: colors.primary, false: colors.border }}
             />
           </View>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>
+              {t('settings.notifyOvulation')}
+            </Text>
+            <Switch
+              value={data.settings.notifyOvulation}
+              onValueChange={(v) => updateSettings({ notifyOvulation: v })}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.rowLabel}>
+              {t('settings.notifyVitamins')}
+            </Text>
+            <Switch
+              value={data.settings.notifyVitamins}
+              onValueChange={(v) => updateSettings({ notifyVitamins: v })}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+          {data.settings.notifyVitamins ? (
+            <View style={styles.vitaminTimes}>
+              <Text style={styles.helper}>
+                {t('settings.notifyVitaminsTime')}
+              </Text>
+              <View style={styles.vitaminTimeRow}>
+                {(
+                  [
+                    ['09:00', 'settings.notifyVitaminsMorning'],
+                    ['14:00', 'settings.notifyVitaminsAfternoon'],
+                    ['20:00', 'settings.notifyVitaminsEvening'],
+                  ] as Array<[string, string]>
+                ).map(([value, key]) => {
+                  const selected =
+                    data.settings.notifyVitaminsTime === value;
+                  return (
+                    <Pressable
+                      key={value}
+                      onPress={() =>
+                        updateSettings({ notifyVitaminsTime: value })
+                      }
+                      style={[
+                        styles.vitaminTimeChip,
+                        selected && styles.vitaminTimeChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.vitaminTimeChipText,
+                          selected && styles.vitaminTimeChipTextActive,
+                        ]}
+                      >
+                        {t(key)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           {Platform.OS === 'web' ? (
             <Text style={styles.helper}>
               {t('settings.notifyUnsupportedWeb')}
@@ -488,6 +558,36 @@ const makeStyles = (colors: ThemeColors) =>
       lineHeight: 17,
       marginTop: 6,
       paddingHorizontal: 4,
+    },
+    vitaminTimes: {
+      marginTop: 8,
+      paddingHorizontal: 4,
+    },
+    vitaminTimeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 6,
+    },
+    vitaminTimeChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    vitaminTimeChipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    vitaminTimeChipText: {
+      color: colors.text,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    vitaminTimeChipTextActive: {
+      color: colors.primaryText,
     },
     actionBtn: {
       backgroundColor: colors.primary,
