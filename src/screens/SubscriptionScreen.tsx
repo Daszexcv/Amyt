@@ -32,10 +32,13 @@ interface MysteryTierCardProps {
   price: string;
   body: string;
   buttonLabel: string;
-  tint: string;
-  glow: string;
+  badge: string;
+  features: string[];
+  glowA: string;
+  glowB: string;
   active?: boolean;
   onPress: () => void;
+  colors: ThemeColors;
 }
 
 const MysteryTierCard: React.FC<MysteryTierCardProps> = ({
@@ -43,30 +46,81 @@ const MysteryTierCard: React.FC<MysteryTierCardProps> = ({
   price,
   body,
   buttonLabel,
-  tint,
-  glow,
+  badge,
+  features,
+  glowA,
+  glowB,
   active,
   onPress,
+  colors,
 }) => {
   return (
     <View
       style={[
         stylesShared.card,
         {
-          backgroundColor: tint,
-          shadowColor: glow,
-          borderColor: active ? BUTTON_ACCENT : 'rgba(255,255,255,0.35)',
+          backgroundColor: colors.surface,
+          borderColor: active ? colors.primary : colors.border,
           borderWidth: active ? 1.5 : 1,
+          shadowColor: colors.primary,
+          overflow: 'hidden',
         },
       ]}
     >
-      <View style={stylesShared.cardTopRow}>
-        <Text style={stylesShared.cardTitle}>{title}</Text>
-        <Text style={stylesShared.cardPrice}>{price}</Text>
+      <View
+        style={[
+          stylesShared.premiumGlowA,
+          { backgroundColor: glowA, opacity: 0.7 },
+        ]}
+      />
+      <View
+        style={[
+          stylesShared.premiumGlowB,
+          { backgroundColor: glowB, opacity: 0.55 },
+        ]}
+      />
+      <View style={stylesShared.premiumBadgeRow}>
+        <View
+          style={[
+            stylesShared.premiumBadge,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <Text
+            style={[stylesShared.premiumBadgeText, { color: colors.primary }]}
+          >
+            {badge}
+          </Text>
+        </View>
       </View>
-      <Text style={stylesShared.cardBody}>{body}</Text>
-      <Pressable style={stylesShared.cardButton} onPress={onPress}>
-        <Text style={stylesShared.cardButtonText}>{buttonLabel}</Text>
+      <View style={stylesShared.cardTopRow}>
+        <Text style={[stylesShared.cardTitle, { color: colors.text }]}>
+          {title}
+        </Text>
+        <Text style={[stylesShared.cardPrice, { color: colors.text }]}>
+          {price}
+        </Text>
+      </View>
+      <Text style={[stylesShared.cardBody, { color: colors.text }]}>{body}</Text>
+      <View style={stylesShared.featureList}>
+        {features.map((line) => (
+          <Text
+            key={line}
+            style={[stylesShared.featureLine, { color: colors.text }]}
+          >
+            ✦ {line}
+          </Text>
+        ))}
+      </View>
+      <Pressable
+        style={[stylesShared.cardButton, { backgroundColor: colors.primary }]}
+        onPress={onPress}
+      >
+        <Text
+          style={[stylesShared.cardButtonText, { color: colors.primaryText }]}
+        >
+          {buttonLabel}
+        </Text>
       </Pressable>
     </View>
   );
@@ -240,6 +294,17 @@ export const SubscriptionScreen: React.FC = () => {
     });
   };
 
+  const openBoxSurvey = (tariff: 'basic' | 'vip') => {
+    if (tier === tariff && isActive) {
+      navigation.navigate('ManageSubscription');
+      return;
+    }
+    const url = `https://t.me/lowerBsk24_bot?start=box_${tariff}`;
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Не получилось открыть Telegram', url);
+    });
+  };
+
   const onPressPremium = () => {
     if (tier === 'premium' && isActive) {
       navigation.navigate('ManageSubscription');
@@ -343,23 +408,48 @@ export const SubscriptionScreen: React.FC = () => {
         <MysteryTierCard
           title="Твой ритм"
           price="999₽/мес"
-          tint={colors.card}
-          glow="#D8BDEB"
+          badge="BOX · Базовый"
+          glowA={colors.fertile}
+          glowB="#D8BDEB"
           active={isActive && tier === 'basic'}
-          body="Каждый месяц перед началом цикла курьер приносит загадочную коробку. Внутри – твои выбранные средства гигиены, вкусный комплимент и ритуал ухода. Состав меняется, опираясь на твой профиль, аллергии, сезон и фазу. Мы не повторяемся. Ты узнаешь наполнение, только открыв коробку."
-          buttonLabel="Выбрать ритм"
-          onPress={openBot}
+          body="Каждый месяц перед началом цикла курьер приносит загадочную коробку с твоим набором заботы — состав меняется под твой профиль, фазу и сезон."
+          features={[
+            'Средства гигиены под твой выбор',
+            'Вкусный комплимент в каждой коробке',
+            'Ритуал ухода под фазу цикла',
+            'Доставка точно перед началом',
+          ]}
+          buttonLabel={
+            isActive && tier === 'basic'
+              ? 'Управление подпиской'
+              : 'Оформить за 999 ₽/мес'
+          }
+          onPress={() => openBoxSurvey('basic')}
+          colors={colors}
         />
 
         <MysteryTierCard
           title="Полная симфония"
           price="1999₽/мес"
-          tint={colors.surface}
-          glow="#C9B5FF"
+          badge="BOX · VIP"
+          glowA={colors.ovulation}
+          glowB="#C9B5FF"
           active={isActive && tier === 'vip'}
-          body="Расширенная тайна для тех, кто хочет больше заботы и сюрпризов. Органические средства гигиены, гастрономический подарок ручной работы, ритуалы ухода для лица, тела и души, чайная церемония и тайный презент. Плюс персональные гайды и медитации в приложении. Бесплатная доставка к началу цикла. Мы собираем этот бокс в абсолютной тишине, зная о тебе больше, чем ты думаешь. Открой – и почувствуй мелодию заботы, написанную только для тебя."
-          buttonLabel="Выбрать симфонию"
-          onPress={openBot}
+          body="Расширенная тайна для тех, кто хочет больше заботы и сюрпризов. Бокс собран в тишине, написан только для тебя."
+          features={[
+            'Органические средства гигиены',
+            'Гастрономический подарок ручной работы',
+            'Ритуалы для лица, тела и души',
+            'Персональные гайды и медитации',
+            'Бесплатная доставка к началу цикла',
+          ]}
+          buttonLabel={
+            isActive && tier === 'vip'
+              ? 'Управление подпиской'
+              : 'Оформить за 1999 ₽/мес'
+          }
+          onPress={() => openBoxSurvey('vip')}
+          colors={colors}
         />
 
         <View style={styles.codeCard}>

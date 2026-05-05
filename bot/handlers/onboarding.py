@@ -668,7 +668,12 @@ async def _save_address(message: Message, state: FSMContext, field: str) -> None
             )
         # Step 7
         await state.set_state(Onboarding.tariff)
-        await _show_tariffs(message)
+        data = await state.get_data()
+        preselect = data.get("_preselected_tariff")
+        if isinstance(preselect, str) and preselect in {"basic", "vip"}:
+            await _send_box_invoice(message, state, preselect)
+        else:
+            await _show_tariffs(message)
 
 
 # ---- Step 7: tariff selection — defers to payment.py ------------------- #
@@ -677,6 +682,42 @@ async def _save_address(message: Message, state: FSMContext, field: str) -> None
 async def _show_tariffs(message: Message) -> None:
     from bot.handlers.payment import show_tariffs  # local import to avoid cycle
     await show_tariffs(message)
+
+
+async def _send_box_invoice(
+    message: Message, state: FSMContext, tariff_value: str
+) -> None:
+    """Skip the manual tariff picker and go straight to invoicing."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    from bot.models import Tariff
+    from bot.services.payments import TARIFF_META, send_invoice
+
+    try:
+        tariff = Tariff(tariff_value)
+    except ValueError:
+        await _show_tariffs(message)
+        return
+    await state.update_data(_tariff=tariff.value)
+    await state.set_state(Onboarding.waiting_payment)
+    sent = await send_invoice(message.bot, message.chat.id, tariff)
+    if not sent:
+        await message.answer(
+            "Платёжный провайдер пока не настроен. Можешь оформить в "
+            "тестовом режиме — нажми кнопку ниже.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=(
+                                f"✅ Оформить за {TARIFF_META[tariff]['price']} ₽ (тест)"
+                            ),
+                            callback_data=f"manualpay:{tariff.value}",
+                        )
+                    ]
+                ]
+            ),
+        )
 
 
 # ---- Helpers ------------------------------------------------------------ #

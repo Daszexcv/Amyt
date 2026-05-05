@@ -71,6 +71,38 @@ async def on_start_premium(message: Message, state: FSMContext) -> None:
     await _send_premium_invoice(message, state)
 
 
+@router.message(
+    CommandStart(deep_link=True),
+    F.text.regexp(r"^/start\s+box(_basic|_vip)?\b"),
+)
+async def on_start_box(message: Message, state: FSMContext) -> None:
+    """Deep link from the app: jump straight into the box-tariff survey.
+
+    ``?start=box`` — survey, pick tariff at the end.
+    ``?start=box_basic`` / ``?start=box_vip`` — survey, pre-pick the tariff.
+    """
+    await state.clear()
+    raw = (message.text or "").strip()
+    suffix = raw.split(maxsplit=1)[-1] if " " in raw else ""
+    preselect: str | None = None
+    if suffix == "box_basic":
+        preselect = "basic"
+    elif suffix == "box_vip":
+        preselect = "vip"
+    if message.from_user is not None:
+        async with session_scope() as session:
+            await get_or_create_user(session, message.from_user)
+    if preselect is not None:
+        await state.update_data(_preselected_tariff=preselect)
+    await state.set_state(Onboarding.name)
+    await message.answer(
+        "Соберём бокс заботы. Я задам 7 вопросов — это займёт пару минут.\n"
+        "Можно прерваться в любой момент: ответы сохраняются.\n\n"
+        "<b>Шаг 1/7. Как тебя зовут?</b>",
+        parse_mode="HTML",
+    )
+
+
 @router.callback_query(F.data == "premium:buy")
 async def on_premium_buy(cb: CallbackQuery, state: FSMContext) -> None:
     if cb.message is None:

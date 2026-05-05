@@ -10,6 +10,7 @@ import {
   PairStatusResponse,
   fetchPairStatus,
   initPair,
+  isDemoActivationEnabled,
 } from '../utils/pairing';
 
 export type SubscriptionType = 'premium' | 'basic_box' | 'vip_box' | 'none';
@@ -335,11 +336,39 @@ export const useSubscription = (): UseSubscriptionApi => {
     [writeSubscriptionFromPair],
   );
 
+  const runDemoPairing = useCallback((): { ok: true; deepLink: string } => {
+    const fakeToken = `DEMO${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+    const deepLink = `https://t.me/lowerBsk24_bot?start=link_${fakeToken}`;
+    setPairingDeepLink(deepLink);
+    setPairingStatus('awaiting_user');
+    pairingPollTimer.current = setTimeout(async () => {
+      if (pairingCancelled.current) return;
+      const expires = new Date(Date.now() + 30 * 24 * 3600 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      await writeSubscriptionFromPair({
+        paired: true,
+        expired: false,
+        tariff: 'premium',
+        expires,
+        telegram_username: 'demo_user',
+      });
+      setPairingTelegramUsername('demo_user');
+      setPairingStatus('paired');
+    }, 5000);
+    return { ok: true, deepLink };
+  }, [writeSubscriptionFromPair]);
+
   const startPairing = useCallback<PairingApi['start']>(async () => {
     pairingCancelled.current = false;
     clearPairingTimer();
     setPairingStatus('requesting');
     setPairingTelegramUsername(null);
+    // Demo / preview builds skip the backend entirely so the pairing UX
+    // can be exercised without a server.
+    if (isDemoActivationEnabled()) {
+      return runDemoPairing();
+    }
     let init: PairInitResponse;
     try {
       init = await initPair();
@@ -355,7 +384,7 @@ export const useSubscription = (): UseSubscriptionApi => {
     const deadlineMs = Date.now() + 5 * 60 * 1000;
     pollPairUntilClaim(init.token, deadlineMs);
     return { ok: true, deepLink: init.deep_link };
-  }, [clearPairingTimer, pollPairUntilClaim]);
+  }, [clearPairingTimer, pollPairUntilClaim, runDemoPairing]);
 
   const cancelPairing = useCallback<PairingApi['cancel']>(() => {
     pairingCancelled.current = true;
