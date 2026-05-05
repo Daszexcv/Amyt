@@ -15,7 +15,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useApp } from '../AppContext';
 import { useSubscription } from '../hooks/useSubscription';
 import { RootStackParamList } from '../navigation';
-import { tArray } from '../i18n';
+import { i18n, tArray } from '../i18n';
 import {
   buildPhaseSegments,
   CyclePhase,
@@ -25,8 +25,6 @@ import {
 import { ThemeColors } from '../theme';
 import { PhaseRing } from '../components/PhaseRing';
 import { WaveBackground } from '../components/WaveBackground';
-import { PeriodStartedButton } from '../components/PeriodStartedButton';
-import { useCycleCorrection } from '../hooks/useCycleCorrection';
 
 const ruDayWord = (n: number): string => {
   const a = Math.abs(n) % 100;
@@ -37,8 +35,8 @@ const ruDayWord = (n: number): string => {
   return 'дней';
 };
 
-const formatDays = (n: number, language: string): string => {
-  if (language === 'ru') return `${n} ${ruDayWord(n)}`;
+const formatDays = (n: number, locale: string): string => {
+  if (locale === 'ru') return `${n} ${ruDayWord(n)}`;
   return n === 1 ? `${n} day` : `${n} days`;
 };
 
@@ -156,7 +154,10 @@ export const TodayScreen: React.FC = () => {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const navigation = useNavigation<Nav>();
   const { isVip } = useSubscription();
-  const correction = useCycleCorrection();
+  // `language` from settings is 'auto' | 'en' | 'ru'. For pluralisation we
+  // always want the resolved locale ('en' or 'ru'), so use i18n.locale.
+  void language;
+  const locale = i18n.locale === 'ru' ? 'ru' : 'en';
   const vipShipDate = useMemo(() => {
     if (!isVip || !predictions.nextPeriodStart) return null;
     try {
@@ -240,13 +241,13 @@ export const TodayScreen: React.FC = () => {
         ? `Задержка ${formatDays(Math.abs(days), 'ru')}`
         : `Late ${formatDays(Math.abs(days), 'en')}`;
     }
-    return formatDays(days, language);
+    return formatDays(days, locale);
   })();
 
   const fertileValue = (() => {
     if (predictions.lastPeriodStart === null) return '—';
     if (fertile.isInside) {
-      return formatDays(fertile.remaining, language);
+      return formatDays(fertile.remaining, locale);
     }
     if (fertile.total === 0) return '—';
     if (cycleDay !== null) {
@@ -258,14 +259,14 @@ export const TodayScreen: React.FC = () => {
           (nextStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
         );
         if (diff > 0) {
-          return language === 'ru'
+          return locale === 'ru'
             ? `через ${formatDays(diff, 'ru')}`
             : `in ${formatDays(diff, 'en')}`;
         }
       }
       return t('today.fertileEnded');
     }
-    return formatDays(fertile.total, language);
+    return formatDays(fertile.total, locale);
   })();
 
   const nextOvulationValue = (() => {
@@ -306,7 +307,6 @@ export const TodayScreen: React.FC = () => {
       isVip={isVip}
       vipShipDate={vipShipDate}
       onTapBox={() => navigation.navigate('Subscription' as never)}
-      arrivedHighlight={correction.isAroundPredicted}
     />
   );
 };
@@ -334,7 +334,6 @@ interface TodayInnerProps {
   isVip: boolean;
   vipShipDate: Date | null;
   onTapBox: () => void;
-  arrivedHighlight: boolean;
 }
 
 const TodayInner: React.FC<TodayInnerProps> = ({
@@ -360,7 +359,6 @@ const TodayInner: React.FC<TodayInnerProps> = ({
   isVip,
   vipShipDate,
   onTapBox,
-  arrivedHighlight,
 }) => {
   const dash = t('today.placeholderValue');
   const showCycleDay = !isEmpty && cycleDay !== null;
@@ -437,9 +435,7 @@ const TodayInner: React.FC<TodayInnerProps> = ({
           <View style={styles.ctaWrap}>
             <Text style={styles.ctaHint}>{t('today.noCycleHint')}</Text>
           </View>
-        ) : (
-          <PeriodStartedButton highlight={arrivedHighlight} colors={colors} />
-        )}
+        ) : null}
 
         {isVip && vipShipDate ? (
           <Pressable style={styles.vipCard} onPress={onTapBox}>
