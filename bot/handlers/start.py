@@ -48,8 +48,14 @@ def _welcome_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text="📦 Бокс заботы (опросник)",
-                    callback_data="onboarding:start",
+                    text="📦 Твой ритм — 999₽/мес",
+                    callback_data="box:basic",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📦 Полная симфония — 1999₽/мес",
+                    callback_data="box:vip",
                 )
             ],
             [
@@ -117,6 +123,31 @@ async def on_premium_buy(cb: CallbackQuery, state: FSMContext) -> None:
     except Exception:
         pass
     await _send_premium_invoice(cb.message, state)
+    await cb.answer()
+
+
+@router.callback_query(F.data.in_({"box:basic", "box:vip"}))
+async def on_box_buy(cb: CallbackQuery, state: FSMContext) -> None:
+    if cb.message is None:
+        await cb.answer()
+        return
+    preselect = "basic" if cb.data == "box:basic" else "vip"
+    await state.clear()
+    if cb.from_user is not None:
+        async with session_scope() as session:
+            await get_or_create_user(session, cb.from_user)
+    try:
+        await cb.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await state.update_data(_preselected_tariff=preselect)
+    await state.set_state(Onboarding.name)
+    await cb.message.answer(
+        "Соберём бокс заботы. Я задам 7 вопросов — это займёт пару минут.\n"
+        "Можно прерваться в любой момент: ответы сохраняются.\n\n"
+        "<b>Шаг 1/7. Как тебя зовут?</b>",
+        parse_mode="HTML",
+    )
     await cb.answer()
 
 
