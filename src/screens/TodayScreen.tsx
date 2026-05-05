@@ -176,15 +176,14 @@ export const TodayScreen: React.FC = () => {
     return !!(log && log.flow && log.flow !== 'none');
   })();
 
-  // Show the "did your period start today?" prompt only when today is near
-  // the predicted next-period start (±2 days) and the user hasn't already
-  // logged a flow for today.
+  // Show the "did your period start today?" prompt within ±7 days of the
+  // predicted next-period start, when the user hasn't already logged a flow.
   const showConfirmCard = (() => {
     if (todayAlreadyLogged) return false;
     if (confirmDismissed) return false;
     const days = predictions.daysUntilNextPeriod;
     if (days === null) return false;
-    return days <= 2 && days >= -7;
+    return days <= 7 && days >= -7;
   })();
 
   const onConfirmYes = async () => {

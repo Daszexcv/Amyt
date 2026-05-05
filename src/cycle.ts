@@ -272,6 +272,18 @@ export const buildDayMarkers = (
     }
   }
 
+  // Project the most recently detected period forward by the average period
+  // length so a single tap on "period started" visually extends across the
+  // expected bleeding window even before the user logs each subsequent day.
+  if (predictions.lastPeriodStart) {
+    const periodLen = predictions.effectivePeriodLength;
+    const startCursor = parseISO(predictions.lastPeriodStart);
+    for (let i = 0; i < periodLen; i++) {
+      const d = fmt(addDays(startCursor, i));
+      if (!isBleeding(logs[d])) add(d, 'predictedPeriod');
+    }
+  }
+
   // Project the cycle forward for ~12 months so users can see future
   // predicted periods, ovulations, and fertile windows on the calendar
   // far ahead — useful for planning travel, conception, etc.
