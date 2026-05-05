@@ -5,11 +5,11 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,6 +17,7 @@ import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 import { useApp } from '../AppContext';
+import { forecastUpcomingCycles } from '../cycle';
 import { useSubscription } from '../hooks/useSubscription';
 import { RootStackParamList } from '../navigation';
 import { SERIF_STACK, WaveBackground } from '../components/WaveBackground';
@@ -223,9 +224,6 @@ export const SubscriptionScreen: React.FC = () => {
     isPremium,
     daysLeft,
     activate,
-    cycleSyncCode,
-    autoSyncStatus,
-    refreshAutoSync,
     pairing,
   } = useSubscription();
   const navigation = useNavigation<Nav>();
@@ -233,51 +231,19 @@ export const SubscriptionScreen: React.FC = () => {
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showManualCode, setShowManualCode] = useState(false);
+  // Privacy toggle: defaults to ON, but the user can flip it off before
+  // tapping "Привязать Telegram" to skip sending the 3-month forecast.
+  const [shareForecast, setShareForecast] = useState(true);
 
-  const lastPeriodStart = useMemo<string | null>(() => {
-    // Pick the latest period start out of the local logs to display the
-    // human-readable «X → Y» date hint next to the cycle-sync code.
-    const dates = Object.keys(data.logs).sort();
-    for (let i = dates.length - 1; i >= 0; i--) {
-      const log = data.logs[dates[i]];
-      const flow = log?.flow;
-      if (flow && flow !== 'none') return dates[i];
-    }
-    return null;
-  }, [data.logs]);
-
-  const syncInfo = useMemo(() => {
-    if (!cycleSyncCode || !lastPeriodStart) return null;
-    const periodLength = Math.max(1, data.settings.averagePeriodLength);
-    const endIso = (() => {
-      const d = new Date(`${lastPeriodStart}T00:00:00Z`);
-      d.setUTCDate(d.getUTCDate() + periodLength - 1);
-      return d.toISOString().slice(0, 10);
-    })();
-    const fmtDate = (iso: string) => {
-      const [y, m, day] = iso.split('-');
-      return `${day}.${m}.${y}`;
-    };
-    return {
-      code: cycleSyncCode,
-      startLabel: fmtDate(lastPeriodStart),
-      endLabel: fmtDate(endIso),
-    };
-  }, [cycleSyncCode, lastPeriodStart, data.settings.averagePeriodLength]);
-  const syncCode = syncInfo?.code ?? null;
-
-  const copySyncCode = async () => {
-    if (!syncCode) return;
-    try {
-      await Clipboard.setStringAsync(syncCode);
-      Alert.alert(
-        'Скопировано',
-        `Открой Lira BOX и пришли ему сообщение:\n/sync ${syncCode}`,
-      );
-    } catch {
-      Alert.alert('Не удалось скопировать', syncCode);
-    }
-  };
+  const forecastEntries = useMemo(
+    () => forecastUpcomingCycles(data.logs, data.settings, new Date(), 3),
+    [data.logs, data.settings],
+  );
+  const forecastReady = forecastEntries.length > 0;
+  const forecastFirstStart = forecastEntries[0]?.cycle_start ?? null;
+  const forecastLastEnd = forecastEntries.length
+    ? forecastEntries[forecastEntries.length - 1].period_end
+    : null;
 
   const fmtDate = (iso: string | null): string => {
     if (!iso) return '—';
@@ -317,7 +283,7 @@ export const SubscriptionScreen: React.FC = () => {
   };
 
   const onPairTelegram = async () => {
-    const res = await pairing.start();
+    const res = await pairing.start({ sendForecast: shareForecast });
     if (!res.ok) {
       Alert.alert(
         'Не удалось связаться с сервером',
@@ -453,83 +419,38 @@ export const SubscriptionScreen: React.FC = () => {
         />
 
         <View style={styles.codeCard}>
-          <Text style={styles.codeTitle}>Код синхронизации цикла</Text>
-          <Text style={styles.codeHint}>
-            Внутри кода — <Text style={{ fontWeight: '700' }}>дата начала</Text> и{' '}
-            <Text style={{ fontWeight: '700' }}>дата конца</Text> твоих последних
-            месячных и средняя длина цикла. Это{' '}
-            <Text style={{ fontWeight: '700' }}>не</Text> код активации подписки —
-            нужен, чтобы Lira BOX знал, когда отправить тебе коробку.
-          </Text>
-          {syncCode && syncInfo ? (
-            <>
-              <View style={styles.syncBadge}>
-                <Text style={styles.syncBadgeText}>{syncCode}</Text>
-              </View>
-              <Text style={[styles.codeHint, { textAlign: 'center', marginTop: 8 }]}>
-                Месячные: {syncInfo.startLabel} → {syncInfo.endLabel}
-              </Text>
-              <View style={styles.autoSyncRow}>
-                <Text style={styles.autoSyncLabel}>
-                  {autoSyncStatus === 'matched'
-                    ? 'Подписка подтянулась автоматически.'
-                    : autoSyncStatus === 'syncing'
-                      ? 'Проверяем подписку…'
-                      : autoSyncStatus === 'unmatched'
-                        ? 'Подписку не нашли. Если уже оплатил(а) — отправь боту /sync с этим кодом.'
-                        : autoSyncStatus === 'error'
-                          ? 'Не удалось связаться с сервером. Попробуй ещё раз.'
-                          : 'Подписка подтянется автоматически после оплаты в боте.'}
-                </Text>
-                <Pressable
-                  style={styles.autoSyncRefreshButton}
-                  onPress={() => {
-                    void refreshAutoSync();
-                  }}
-                  disabled={autoSyncStatus === 'syncing'}
-                >
-                  <Text style={styles.autoSyncRefreshText}>
-                    {autoSyncStatus === 'syncing' ? '…' : 'Обновить'}
-                  </Text>
-                </Pressable>
-              </View>
-              <Pressable style={styles.activateButton} onPress={copySyncCode}>
-                <Text style={styles.activateButtonText}>
-                  Скопировать код
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.activateButton,
-                  { marginTop: 10, backgroundColor: 'transparent', borderWidth: 1, borderColor: BUTTON_ACCENT },
-                ]}
-                onPress={() => {
-                  const url = `https://t.me/lowerBsk24_bot?start=sync_${encodeURIComponent(syncCode)}`;
-                  Linking.openURL(url).catch(() => {
-                    Alert.alert('Не получилось открыть Telegram', url);
-                  });
-                }}
-              >
-                <Text style={[styles.activateButtonText, { color: BUTTON_ACCENT }]}>
-                  Открыть Lira BOX
-                </Text>
-              </Pressable>
-            </>
-          ) : (
-            <Text style={styles.codeHint}>
-              Сначала отметь день начала последних месячных в календаре или на
-              экране «Сегодня». Тогда здесь появится твой код.
-            </Text>
-          )}
-        </View>
-
-        <View style={styles.codeCard}>
           <Text style={styles.codeTitle}>Привязать Telegram</Text>
           <Text style={styles.codeHint}>
-            Один тап вместо ввода кода: жми кнопку, открой бот, нажми{' '}
-            «Старт» — и подписка подтянется автоматически. Если её ещё
-            нет — подтянется, как только оплатишь в боте.
+            Один тап — и бот сам узнаёт, когда тебе нужна следующая
+            коробка. Жми кнопку, открой бот, нажми «Старт» — подписка
+            подтянется автоматически. Если её ещё нет — подтянется, как
+            только оплатишь в боте.
           </Text>
+
+          <View style={styles.forecastToggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.forecastToggleTitle}>
+                Поделиться прогнозом цикла
+              </Text>
+              <Text style={styles.forecastToggleHint}>
+                {forecastReady && forecastFirstStart && forecastLastEnd
+                  ? `Передаём в бот даты следующих 3 циклов: ${fmtDate(forecastFirstStart)} — ${fmtDate(forecastLastEnd)}. Только месячные, овуляция, фертильные окна. Никаких симптомов и заметок.`
+                  : 'Сначала отметь день начала последних месячных — тогда сможем передать прогноз. Без него бот не будет знать, к какой дате готовить бокс.'}
+              </Text>
+            </View>
+            <Switch
+              value={shareForecast && forecastReady}
+              onValueChange={setShareForecast}
+              disabled={!forecastReady}
+              trackColor={{ false: colors.border, true: BUTTON_ACCENT }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+          {pairing.forecastSent ? (
+            <Text style={[styles.codeHint, styles.pairOk]}>
+              Прогноз цикла отправлен в бот.
+            </Text>
+          ) : null}
 
           {pairing.status === 'paired' ? (
             <Text style={[styles.codeHint, styles.pairOk]}>
@@ -920,6 +841,26 @@ const makeStyles = (colors: ThemeColors) =>
       marginTop: 12,
       color: '#3F8E5C',
       fontWeight: '600',
+    },
+    forecastToggleRow: {
+      marginTop: 14,
+      paddingTop: 14,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    forecastToggleTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    forecastToggleHint: {
+      fontSize: 12,
+      lineHeight: 17,
+      color: colors.textMuted,
     },
     pairWarn: {
       marginTop: 12,

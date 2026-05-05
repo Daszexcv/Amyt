@@ -119,6 +119,63 @@ export interface CyclePredictions {
   averageSource: 'logs' | 'settings';
 }
 
+export interface CycleForecastEntry {
+  /** ISO date — first day of bleeding for this projected cycle. */
+  cycle_start: string;
+  /** Last day of bleeding for this projected cycle. */
+  period_end: string;
+  /** Predicted ovulation date (cycle_start + cycleLen - lutealPhase). */
+  ovulation: string;
+  /** Start of the 6-day fertile window (ovulation - 5d). */
+  fertile_start: string;
+  /** End of the fertile window (ovulation + 1d). */
+  fertile_end: string;
+}
+
+/**
+ * Project the next ``count`` cycles forward from the latest known
+ * period start. Used by the Telegram-pairing flow to ship a privacy-
+ * minimal forecast (just bleeding / ovulation / fertile dates) to the
+ * bot so it can schedule box deliveries without the user typing a code.
+ */
+export const forecastUpcomingCycles = (
+  logs: Record<string, DayLog>,
+  settings: Settings,
+  today: Date = new Date(),
+  count = 3,
+): CycleForecastEntry[] => {
+  const stats = computeCycleStats(logs, settings);
+  const cycleLen = stats.averageCycleLength ?? settings.averageCycleLength;
+  const periodLen = stats.averagePeriodLength ?? settings.averagePeriodLength;
+  const lastStart = stats.periodStarts.length
+    ? stats.periodStarts[stats.periodStarts.length - 1]
+    : null;
+  if (!lastStart) return [];
+
+  let cursor = addDays(parseISO(lastStart), cycleLen);
+  while (differenceInCalendarDays(cursor, today) < 0) {
+    cursor = addDays(cursor, cycleLen);
+  }
+
+  const out: CycleForecastEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    const cycleStart = cursor;
+    const periodEnd = addDays(cycleStart, Math.max(0, periodLen - 1));
+    const ovulation = addDays(cycleStart, cycleLen - settings.lutealPhaseLength);
+    const fertileStart = addDays(ovulation, -5);
+    const fertileEnd = addDays(ovulation, 1);
+    out.push({
+      cycle_start: fmt(cycleStart),
+      period_end: fmt(periodEnd),
+      ovulation: fmt(ovulation),
+      fertile_start: fmt(fertileStart),
+      fertile_end: fmt(fertileEnd),
+    });
+    cursor = addDays(cursor, cycleLen);
+  }
+  return out;
+};
+
 export const computePredictions = (
   logs: Record<string, DayLog>,
   settings: Settings,

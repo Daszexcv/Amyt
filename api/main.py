@@ -33,6 +33,7 @@ from bot.services.pairing import (
     find_pair_token,
     is_expired,
 )
+from bot.services.forecasts import ForecastEntry, replace_user_forecast
 from bot.services.subscriptions import (
     canonicalise_cycle_code,
     find_active_subscription_by_cycle_code,
@@ -41,6 +42,12 @@ from bot.services.subscriptions import (
 
 log = logging.getLogger("flowcare-api")
 logging.basicConfig(level=logging.INFO)
+
+
+# Shared aiogram Bot handle so the API can send notifications (e.g. the
+# "Прогноз получен" confirmation after the app uploads the forecast)
+# through the same Telegram session that the polling worker uses.
+_shared_bot: object | None = None
 
 
 async def _run_bot_polling() -> None:
@@ -53,6 +60,7 @@ async def _run_bot_polling() -> None:
     empty (e.g. local API dev or first Fly deploy before secrets are
     configured).
     """
+    global _shared_bot
     settings = get_settings()
     if not settings.bot_token:
         log.info("BOT_TOKEN unset — bot polling not started")
@@ -66,12 +74,14 @@ async def _run_bot_polling() -> None:
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=None),
     )
+    _shared_bot = bot
     dp = Dispatcher()
     dp.include_router(root_router)
     log.info("Starting Telegram bot polling…")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        _shared_bot = None
         await bot.session.close()
 
 
@@ -243,6 +253,91 @@ async def pair_status(token: str) -> PairStatusOut:
         out.tariff = sub.tariff.value
         out.expires = sub.expires_at.date().isoformat()
     return out
+
+
+# ---------------------------------------------------------------------- #
+# /v1/pair/{token}/forecast — push 3-month cycle forecast to the bot      #
+# ---------------------------------------------------------------------- #
+
+
+class ForecastEntryIn(BaseModel):
+    """One projected cycle. All dates are ``YYYY-MM-DD`` strings."""
+
+    cycle_start: str
+    period_end: str
+    ovulation: str
+    fertile_start: str
+    fertile_end: str
+
+
+class ForecastIn(BaseModel):
+    entries: list[ForecastEntryIn] = Field(default_factory=list, max_length=12)
+
+
+class ForecastOut(BaseModel):
+    ok: bool
+    stored: int = 0
+
+
+def _parse_date(value: str):
+    from datetime import date as _date
+
+    try:
+        return _date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"invalid date: {value}"
+        ) from exc
+
+
+@app.post("/v1/pair/{token}/forecast", response_model=ForecastOut)
+async def pair_forecast(token: str, body: ForecastIn) -> ForecastOut:
+    if len(token) > 64:
+        raise HTTPException(status_code=400, detail="token too long")
+    if not body.entries:
+        raise HTTPException(status_code=422, detail="forecast is empty")
+    parsed: list[ForecastEntry] = []
+    for raw in body.entries:
+        parsed.append(
+            ForecastEntry(
+                cycle_start=_parse_date(raw.cycle_start),
+                period_end=_parse_date(raw.period_end),
+                ovulation=_parse_date(raw.ovulation),
+                fertile_start=_parse_date(raw.fertile_start),
+                fertile_end=_parse_date(raw.fertile_end),
+            )
+        )
+    async with session_scope() as session:
+        row = await find_pair_token(session, token)
+        if row is None or row.claimed_user_id is None:
+            raise HTTPException(status_code=404, detail="pair token not claimed")
+        if is_expired(row):
+            # Expired-but-claimed is fine: the user already linked, the
+            # token just can't be re-claimed by anyone else.
+            pass
+        user = await session.get(User, row.claimed_user_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="user missing")
+        stored = await replace_user_forecast(session, user, parsed)
+        chat_id = user.telegram_id
+    if _shared_bot is not None and chat_id is not None and parsed:
+        first = parsed[0]
+        try:
+            await _shared_bot.send_message(  # type: ignore[attr-defined]
+                chat_id=chat_id,
+                text=(
+                    "Получил твой прогноз цикла на 3 месяца 🌸\n\n"
+                    f"Ближайшие месячные: <b>{first.cycle_start:%d.%m.%Y}</b>\n"
+                    f"Овуляция: <b>{first.ovulation:%d.%m.%Y}</b>\n\n"
+                    "Бокс приедет к началу следующих месячных. "
+                    "Прогноз обновится автоматически каждый раз, когда "
+                    "ты заново привязываешь Telegram в приложении."
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:  # pragma: no cover — best-effort notification
+            log.exception("forecast confirmation send failed")
+    return ForecastOut(ok=True, stored=stored)
 
 
 # ---------------------------------------------------------------------- #

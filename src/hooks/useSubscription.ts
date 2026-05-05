@@ -1,7 +1,7 @@
 import { differenceInCalendarDays, isBefore, parseISO } from 'date-fns';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../AppContext';
-import { findPeriodStarts } from '../cycle';
+import { findPeriodStarts, forecastUpcomingCycles } from '../cycle';
 import { encodeCycleCode } from '../cycleCode';
 import { DEFAULT_SUBSCRIPTION, Subscription, SubscriptionTier } from '../types';
 import { activateCode, fetchSubscriptionByCycleCode } from '../utils/activation';
@@ -11,6 +11,7 @@ import {
   fetchPairStatus,
   initPair,
   isDemoActivationEnabled,
+  postPairForecast,
 } from '../utils/pairing';
 
 export type SubscriptionType = 'premium' | 'basic_box' | 'vip_box' | 'none';
@@ -77,8 +78,12 @@ export interface PairingApi {
   deepLink: string | null;
   /** Telegram username of the user who claimed, after a successful pair. */
   telegramUsername: string | null;
+  /** Whether the most recent pair attempt successfully pushed forecast. */
+  forecastSent: boolean;
   /** Start a new pairing attempt. Returns the deep-link to open. */
-  start: () => Promise<{ ok: true; deepLink: string } | { ok: false }>;
+  start: (
+    opts?: { sendForecast?: boolean },
+  ) => Promise<{ ok: true; deepLink: string } | { ok: false }>;
   /** Cancel an in-flight polling loop. */
   cancel: () => void;
 }
@@ -268,8 +273,18 @@ export const useSubscription = (): UseSubscriptionApi => {
   const [pairingTelegramUsername, setPairingTelegramUsername] = useState<
     string | null
   >(null);
+  const [pairingForecastSent, setPairingForecastSent] = useState(false);
   const pairingPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pairingCancelled = useRef(false);
+  // Whether the user opted into shipping the 3-month forecast on the
+  // most recent ``start()`` call. Captured at start time so the
+  // background poll uses the right value once the bot claims.
+  const pairingSendForecast = useRef(true);
+  const pairingForecastPushed = useRef(false);
+
+  const buildForecastPayload = useCallback(() => {
+    return forecastUpcomingCycles(data.logs, data.settings, new Date(), 3);
+  }, [data.logs, data.settings]);
 
   const clearPairingTimer = useCallback(() => {
     if (pairingPollTimer.current) {
@@ -298,6 +313,19 @@ export const useSubscription = (): UseSubscriptionApi => {
     [sub.activationCode, updateSubscription],
   );
 
+  const pushForecastIfAllowed = useCallback(
+    async (token: string) => {
+      if (!pairingSendForecast.current) return;
+      if (pairingForecastPushed.current) return;
+      const entries = buildForecastPayload();
+      if (entries.length === 0) return;
+      const ok = await postPairForecast(token, entries);
+      pairingForecastPushed.current = true;
+      setPairingForecastSent(ok);
+    },
+    [buildForecastPayload],
+  );
+
   const pollPairUntilClaim = useCallback(
     (token: string, deadlineMs: number) => {
       const tick = async () => {
@@ -321,6 +349,9 @@ export const useSubscription = (): UseSubscriptionApi => {
         }
         if (res.paired) {
           setPairingTelegramUsername(res.telegram_username ?? null);
+          // Push the user's 3-month forecast as soon as the bot claims.
+          // Best-effort — failures don't block the pairing UX.
+          await pushForecastIfAllowed(token);
           if (res.tariff && res.expires) {
             await writeSubscriptionFromPair(res);
             setPairingStatus('paired');
@@ -333,7 +364,7 @@ export const useSubscription = (): UseSubscriptionApi => {
       };
       void tick();
     },
-    [writeSubscriptionFromPair],
+    [pushForecastIfAllowed, writeSubscriptionFromPair],
   );
 
   const runDemoPairing = useCallback((): { ok: true; deepLink: string } => {
@@ -354,37 +385,51 @@ export const useSubscription = (): UseSubscriptionApi => {
         telegram_username: 'demo_user',
       });
       setPairingTelegramUsername('demo_user');
+      // Demo: pretend forecast was uploaded if user opted in and we
+      // have at least one period start logged.
+      if (
+        pairingSendForecast.current &&
+        buildForecastPayload().length > 0
+      ) {
+        setPairingForecastSent(true);
+      }
       setPairingStatus('paired');
     }, 5000);
     return { ok: true, deepLink };
-  }, [writeSubscriptionFromPair]);
+  }, [buildForecastPayload, writeSubscriptionFromPair]);
 
-  const startPairing = useCallback<PairingApi['start']>(async () => {
-    pairingCancelled.current = false;
-    clearPairingTimer();
-    setPairingStatus('requesting');
-    setPairingTelegramUsername(null);
-    // Demo / preview builds skip the backend entirely so the pairing UX
-    // can be exercised without a server.
-    if (isDemoActivationEnabled()) {
-      return runDemoPairing();
-    }
-    let init: PairInitResponse;
-    try {
-      init = await initPair();
-    } catch {
-      setPairingStatus('error');
-      return { ok: false };
-    }
-    setPairingDeepLink(init.deep_link);
-    setPairingStatus('awaiting_user');
-    // Poll for up to 5 minutes (longer than the bot-side TOKEN_TTL of
-    // 15 min, but short enough that an abandoned attempt eventually times
-    // out client-side).
-    const deadlineMs = Date.now() + 5 * 60 * 1000;
-    pollPairUntilClaim(init.token, deadlineMs);
-    return { ok: true, deepLink: init.deep_link };
-  }, [clearPairingTimer, pollPairUntilClaim, runDemoPairing]);
+  const startPairing = useCallback<PairingApi['start']>(
+    async (opts) => {
+      pairingCancelled.current = false;
+      clearPairingTimer();
+      setPairingStatus('requesting');
+      setPairingTelegramUsername(null);
+      setPairingForecastSent(false);
+      pairingForecastPushed.current = false;
+      pairingSendForecast.current = opts?.sendForecast !== false;
+      // Demo / preview builds skip the backend entirely so the pairing UX
+      // can be exercised without a server.
+      if (isDemoActivationEnabled()) {
+        return runDemoPairing();
+      }
+      let init: PairInitResponse;
+      try {
+        init = await initPair();
+      } catch {
+        setPairingStatus('error');
+        return { ok: false };
+      }
+      setPairingDeepLink(init.deep_link);
+      setPairingStatus('awaiting_user');
+      // Poll for up to 5 minutes (longer than the bot-side TOKEN_TTL of
+      // 15 min, but short enough that an abandoned attempt eventually
+      // times out client-side).
+      const deadlineMs = Date.now() + 5 * 60 * 1000;
+      pollPairUntilClaim(init.token, deadlineMs);
+      return { ok: true, deepLink: init.deep_link };
+    },
+    [clearPairingTimer, pollPairUntilClaim, runDemoPairing],
+  );
 
   const cancelPairing = useCallback<PairingApi['cancel']>(() => {
     pairingCancelled.current = true;
@@ -432,6 +477,7 @@ export const useSubscription = (): UseSubscriptionApi => {
       status: pairingStatus,
       deepLink: pairingDeepLink,
       telegramUsername: pairingTelegramUsername,
+      forecastSent: pairingForecastSent,
       start: startPairing,
       cancel: cancelPairing,
     },

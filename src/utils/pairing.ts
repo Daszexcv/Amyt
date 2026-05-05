@@ -144,5 +144,39 @@ export const fetchPairStatus = async (
   return (await res.json()) as PairStatusResponse;
 };
 
+export interface ForecastEntryPayload {
+  cycle_start: string;
+  period_end: string;
+  ovulation: string;
+  fertile_start: string;
+  fertile_end: string;
+}
+
+/**
+ * Push the next-3-cycles forecast to the bot for a pair token that has
+ * already been claimed. Returns ``true`` on a 2xx response, ``false``
+ * otherwise. Failures are non-fatal: the user is still paired, they
+ * just won't get the "прогноз получен" confirmation in the bot.
+ */
+export const postPairForecast = async (
+  token: string,
+  entries: ForecastEntryPayload[],
+): Promise<boolean> => {
+  if (entries.length === 0) return false;
+  const { url, headers: authHeaders } = splitBasicAuth(
+    `${baseUrl().replace(/\/$/, '')}/v1/pair/${encodeURIComponent(token)}/forecast`,
+  );
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({ entries }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+};
+
 export const isPairingApiConfigured = (): boolean =>
   !baseUrl().includes('flowcare-api.example.com');
