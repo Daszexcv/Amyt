@@ -186,7 +186,11 @@ export const computePredictions = (
 ): CyclePredictions => {
   const stats = computeCycleStats(logs, settings);
   const cycleLen = stats.averageCycleLength ?? settings.averageCycleLength;
-  const periodLen = stats.averagePeriodLength ?? settings.averagePeriodLength;
+  const rawPeriodLen = stats.averagePeriodLength ?? settings.averagePeriodLength;
+  // Clamp the projected period length to at least 3 days (medical baseline)
+  // so visual projections never collapse to a single day on accounts with
+  // only one logged bleeding day or an unusually low override.
+  const periodLen = Math.max(rawPeriodLen, 3);
   const averageSource: 'logs' | 'settings' =
     stats.averageCycleLength !== null ? 'logs' : 'settings';
 
