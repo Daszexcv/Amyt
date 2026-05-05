@@ -73,7 +73,10 @@ export const computeCycleStats = (
   }
 
   // Compute average period length by counting consecutive bleeding days
-  // starting from each detected period start.
+  // starting from each detected period start. Skip single-day entries —
+  // those are typically users who marked "period started" once but haven't
+  // logged the rest yet, and treating them as 1-day periods would shrink
+  // every projection to a single day.
   const periodLengths: number[] = [];
   for (const start of periodStarts) {
     let len = 0;
@@ -83,7 +86,7 @@ export const computeCycleStats = (
       cursor = addDays(cursor, 1);
       if (len > 14) break; // safety
     }
-    if (len > 0) periodLengths.push(len);
+    if (len >= 2) periodLengths.push(len);
   }
   const avgPeriod =
     periodLengths.length > 0
