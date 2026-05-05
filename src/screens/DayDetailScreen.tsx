@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, parseISO } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApp } from '../AppContext';
+import { i18n } from '../i18n';
 import {
   DayLog,
   FlowLevel,
@@ -45,10 +47,13 @@ export const DayDetailScreen: React.FC<Props> = ({ route, navigation }) => {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   useEffect(() => {
+    const locale = i18n.locale === 'ru' ? ru : undefined;
     navigation.setOptions({
-      title: format(parseISO(date), 'd MMM yyyy'),
+      title: format(parseISO(date), 'd MMMM yyyy', { locale }),
     });
   }, [date, navigation]);
+
+  const isPeriodDay = flow !== undefined && flow !== 'none';
 
   const toggle = <T extends string>(arr: T[], item: T): T[] =>
     arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item];
@@ -91,6 +96,26 @@ export const DayDetailScreen: React.FC<Props> = ({ route, navigation }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.periodCard}>
+            <View style={styles.periodRow}>
+              <Text style={styles.periodLabel}>{t('day.periodStarted')}</Text>
+              <Switch
+                value={isPeriodDay}
+                onValueChange={(on) => {
+                  if (on) {
+                    if (!flow || flow === 'none') setFlow('medium');
+                  } else {
+                    setFlow(undefined);
+                  }
+                }}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+            {isPeriodDay && (
+              <Text style={styles.periodHint}>{t('day.periodStartedHint')}</Text>
+            )}
+          </View>
+
           <Section title={t('day.flow')} colors={colors}>
             <View style={styles.chipRow}>
               {FLOW_LEVELS.map((lvl) => {
@@ -246,6 +271,32 @@ const makeStyles = (colors: ReturnType<typeof useApp>['colors']) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     content: { padding: 16, paddingBottom: 32 },
+    periodCard: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginBottom: 16,
+    },
+    periodRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    periodLabel: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '600',
+      flex: 1,
+      paddingRight: 12,
+    },
+    periodHint: {
+      color: colors.textMuted,
+      fontSize: 13,
+      marginTop: 8,
+      lineHeight: 18,
+    },
     section: { marginBottom: 16 },
     sectionTitle: {
       color: colors.textMuted,

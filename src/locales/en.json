@@ -72,7 +72,9 @@
     "notesPlaceholder": "Anything to remember…",
     "intimacy": "Intimacy",
     "save": "Save",
-    "delete": "Delete entry"
+    "delete": "Delete entry",
+    "periodStarted": "Period started",
+    "periodStartedHint": "Forecast will recalculate for this cycle and the next ones."
   },
   "flow": {
     "none": "None",
