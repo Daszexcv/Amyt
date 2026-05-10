@@ -109,10 +109,12 @@ if (!html.includes('apple-mobile-web-app-title')) {
   html = html.replace('<title>Lira</title>', `<title>Lira</title>${headInsert}`);
 }
 
-// Inject the on-device LLM (Llama 3.2 1B via @mlc-ai/web-llm) right before
-// </body>. The bundled chat screen calls /v1/lira/{status,chat}; the injected
-// script monkey-patches window.fetch so those endpoints are served locally
-// from WebGPU. See scripts/lira-webllm-inject.html for the actual markup.
+// Inject the chat backend redirector right before </body>. The bundled chat
+// screen calls `${syncApiBaseUrl()}/v1/lira/{status,chat}`, which falls back
+// to a hardcoded URL that is no longer reachable. The injected script
+// monkey-patches window.fetch so those endpoints route to our Fly.io backend
+// (backend/ in this repo). That keeps the chat zero-friction across all
+// browsers (including iOS Safari) — no flags, no signup, no model download.
 if (fs.existsSync(llmInjectPath) && !html.includes('LIRA_LLM_INJECTED')) {
   const llmInject = fs.readFileSync(llmInjectPath, 'utf8');
   if (html.includes('</body>')) {
