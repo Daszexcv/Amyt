@@ -1,7 +1,7 @@
 [project]
 name = "lira-backend"
 version = "0.1.0"
-description = "Tiny FastAPI backend for the Lira chat assistant; proxies Pollinations.ai (free, no-key, OpenAI-compatible)."
+description = "Tiny FastAPI backend for the Lira chat + onboarding-Telegram-notification proxy (Pollinations.ai for chat, Telegram Bot API for onboarding)."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115",

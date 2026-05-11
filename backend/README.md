@@ -1,6 +1,10 @@
-# Lira chat backend
+# Lira chat + onboarding backend
 
-Tiny FastAPI service that powers the "Лира" chat in the Lira web app.
+Tiny FastAPI service that powers two pieces of the Lira web app:
+
+1. The "Лира" in-app chat (proxied to a free LLM).
+2. A Telegram notification webhook that pings the product owner whenever a
+   new user finishes the onboarding questionnaire.
 
 ## What it does
 
@@ -9,10 +13,21 @@ Exposes the contract that the bundled chat UI already speaks:
 - `GET /v1/lira/status` → `{"enabled": true, "model": "openai"}`
 - `POST /v1/lira/chat` → `{"reply": "..."}`
 
-Internally it forwards messages to [Pollinations.ai](https://pollinations.ai)'s
-free, no-API-key, OpenAI-compatible chat endpoint. We wrap each request with
-a Russian-language "warm cycle confidante" system prompt that includes the
-user's `cycle_day` and `phase`, so Лира stays in character across sessions.
+Plus the onboarding-notification endpoint that the post-export injection
+script in `dist/index.html` calls when the user flips `onboardingDone:true`
+in localStorage:
+
+- `POST /v1/lira/onboarding` → `{"delivered": true | false, "detail": "..."}`
+
+For chat, the backend forwards messages to
+[Pollinations.ai](https://pollinations.ai)'s free, no-API-key, OpenAI-compatible
+chat endpoint. We wrap each request with a Russian-language "warm cycle
+confidante" system prompt that includes the user's `cycle_day` and `phase`,
+so Лира stays in character across sessions.
+
+For onboarding, the backend formats a Russian Telegram HTML message (name,
+birthdate, cycle length, last few period ranges, shipping address, box
+profile, device metadata) and posts it to the Telegram Bot API.
 
 ## Why Pollinations.ai
 
@@ -55,3 +70,8 @@ local backend instead, edit the `BACKEND` constant in
 - `POLLINATIONS_MODEL` — model name on Pollinations (default `openai`, which
   resolves to `openai-fast` / GPT-OSS 20B on the anonymous tier).
 - `POLLINATIONS_RETRIES` — retry attempts on 5xx (default `3`).
+- `TELEGRAM_BOT_TOKEN` — bot token used to deliver onboarding notifications.
+  When unset, `/v1/lira/onboarding` returns `{"delivered": false}` without
+  raising — the chat endpoint is unaffected.
+- `TELEGRAM_CHAT_ID` — numeric chat ID that should receive the notifications
+  (typically the product owner's personal chat).

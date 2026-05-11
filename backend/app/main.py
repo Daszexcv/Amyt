@@ -22,9 +22,23 @@ import asyncio
 import logging
 import os
 import random
+from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
+
+# Load any .env file shipped alongside this package (used to thread Fly.io
+# secrets into the running container without having to call `fly secrets set`).
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+if _ENV_FILE.is_file():
+    for _line in _ENV_FILE.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+        os.environ.setdefault(_k, _v)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -40,6 +54,10 @@ POLLINATIONS_MODEL = os.environ.get("POLLINATIONS_MODEL", "openai").strip()
 # `openai`). The other names we used to try (mistral, llama) 404, so on a 5xx
 # we retry the same model with a short jittered backoff instead of swapping.
 POLLINATIONS_RETRIES = int(os.environ.get("POLLINATIONS_RETRIES", "3"))
+
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_API = "https://api.telegram.org"
 
 PHASE_RU: dict[str, str] = {
     "menstrual": "Менструация (может быть усталость, боль, низкая энергия).",
@@ -88,6 +106,47 @@ class StatusResponse(BaseModel):
     model: str | None = None
 
 
+class OnboardingProfile(BaseModel):
+    name: str | None = None
+    birthdate: str | None = None
+
+
+class OnboardingSettings(BaseModel):
+    averageCycleLength: int | None = None
+    averagePeriodLength: int | None = None
+    lutealPhaseLength: int | None = None
+    language: str | None = None
+
+
+class OnboardingShipping(BaseModel):
+    country: str | None = None
+    city: str | None = None
+    street: str | None = None
+    building: str | None = None
+    apartment: str | None = None
+    postalCode: str | None = None
+    phone: str | None = None
+
+
+class OnboardingRequest(BaseModel):
+    device_id: str | None = None
+    user_agent: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    profile: OnboardingProfile | None = None
+    settings: OnboardingSettings | None = None
+    shippingAddress: OnboardingShipping | None = None
+    logs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    boxProfile: dict[str, Any] | None = None
+    cycle_day: int | None = None
+    phase: str | None = None
+
+
+class OnboardingResponse(BaseModel):
+    delivered: bool
+    detail: str | None = None
+
+
 app = FastAPI(
     title="Lira chat backend",
     version="0.1.0",
@@ -113,6 +172,35 @@ async def healthz() -> dict[str, str]:
 @app.get("/v1/lira/status", response_model=StatusResponse)
 async def lira_status() -> StatusResponse:
     return StatusResponse(enabled=True, model=POLLINATIONS_MODEL)
+
+
+@app.post("/v1/lira/onboarding", response_model=OnboardingResponse)
+async def lira_onboarding(req: OnboardingRequest) -> OnboardingResponse:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        LOGGER.warning("telegram notify skipped: bot token or chat id not configured")
+        return OnboardingResponse(delivered=False, detail="telegram_not_configured")
+
+    text = build_telegram_message(req)
+    url = f"{TELEGRAM_API}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=8.0)) as client:
+            resp = await client.post(url, json=payload)
+    except httpx.HTTPError as exc:
+        LOGGER.error("telegram network error: %s", exc)
+        return OnboardingResponse(delivered=False, detail="network")
+
+    if resp.status_code >= 400:
+        LOGGER.error("telegram http %s: %s", resp.status_code, resp.text[:300])
+        return OnboardingResponse(
+            delivered=False, detail=f"http_{resp.status_code}"
+        )
+    return OnboardingResponse(delivered=True)
 
 
 @app.post("/v1/lira/chat", response_model=ChatResponse)
@@ -190,6 +278,185 @@ async def lira_chat(req: ChatRequest) -> ChatResponse:
 
     LOGGER.error("all pollinations attempts failed: %s", last_error)
     return ChatResponse(reply=_canned_fallback(req.phase))
+
+
+def _fmt_date(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        d = date.fromisoformat(value[:10])
+    except (TypeError, ValueError):
+        return value
+    return d.strftime("%d.%m.%Y")
+
+
+def _extract_period_ranges(
+    logs: dict[str, dict[str, Any]] | None, limit: int = 3
+) -> list[tuple[date, date]]:
+    """Find contiguous runs of dates with non-empty/non-'none' flow.
+
+    Returns the most-recent N runs as (start_date, end_date) tuples.
+    """
+
+    if not logs:
+        return []
+    period_days: list[date] = []
+    for key, entry in logs.items():
+        if not isinstance(entry, dict):
+            continue
+        flow = entry.get("flow")
+        if not flow or flow == "none":
+            continue
+        try:
+            period_days.append(date.fromisoformat(key[:10]))
+        except ValueError:
+            continue
+    if not period_days:
+        return []
+    period_days.sort()
+    runs: list[tuple[date, date]] = []
+    run_start = period_days[0]
+    prev = period_days[0]
+    for d in period_days[1:]:
+        if (d - prev).days <= 1:
+            prev = d
+            continue
+        runs.append((run_start, prev))
+        run_start = d
+        prev = d
+    runs.append((run_start, prev))
+    runs.sort(key=lambda pair: pair[0], reverse=True)
+    return runs[:limit]
+
+
+PHASE_LABEL_RU = {
+    "menstrual": "Менструация",
+    "follicular": "Фолликулярная",
+    "ovulation": "Овуляция",
+    "luteal": "Лютеиновая",
+}
+
+
+def _escape_html(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def build_telegram_message(req: OnboardingRequest) -> str:
+    profile = req.profile or OnboardingProfile()
+    settings = req.settings or OnboardingSettings()
+    shipping = req.shippingAddress or OnboardingShipping()
+
+    name = (profile.name or "").strip() or "—"
+    birthdate = _fmt_date(profile.birthdate) or "—"
+
+    lines: list[str] = [
+        "🌿 <b>Новый онбординг в Lira</b>",
+        "",
+        f"👤 <b>Имя:</b> {_escape_html(name)}",
+        f"🎂 <b>Дата рождения:</b> {_escape_html(birthdate)}",
+    ]
+
+    if settings.averageCycleLength:
+        lines.append(f"🔁 <b>Длина цикла:</b> {settings.averageCycleLength} дн.")
+    if settings.averagePeriodLength:
+        lines.append(
+            f"🩸 <b>Длина месячных:</b> {settings.averagePeriodLength} дн."
+        )
+    if req.cycle_day:
+        phase_human = PHASE_LABEL_RU.get(req.phase or "", req.phase or "—")
+        lines.append(
+            f"📆 <b>Сегодня:</b> день {req.cycle_day}, фаза — {_escape_html(phase_human)}"
+        )
+
+    runs = _extract_period_ranges(req.logs, limit=3)
+    if runs:
+        lines.append("")
+        lines.append("🩸 <b>Месячные (последние):</b>")
+        for start, end in runs:
+            if start == end:
+                lines.append(
+                    f"• {start.strftime('%d.%m.%Y')} (1 день)"
+                )
+            else:
+                length = (end - start).days + 1
+                lines.append(
+                    f"• {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')} "
+                    f"({length} дн.)"
+                )
+
+    has_address = any(
+        getattr(shipping, f, None)
+        for f in ("country", "city", "street", "building", "postalCode", "phone")
+    )
+    if has_address:
+        addr_parts = [
+            shipping.postalCode,
+            shipping.country,
+            shipping.city,
+            shipping.street,
+            shipping.building,
+            shipping.apartment,
+        ]
+        addr = ", ".join(p for p in addr_parts if p)
+        lines.append("")
+        lines.append("📦 <b>Адрес доставки:</b>")
+        if addr:
+            lines.append(f"  {_escape_html(addr)}")
+        if shipping.phone:
+            lines.append(f"  ☆ {_escape_html(shipping.phone)}")
+
+    if req.boxProfile:
+        bp = req.boxProfile
+        bp_lines: list[str] = []
+        if isinstance(bp.get("hygieneTypes"), list) and bp["hygieneTypes"]:
+            bp_lines.append(
+                "  Гигиена: "
+                + _escape_html(", ".join(str(x) for x in bp["hygieneTypes"]))
+            )
+        if bp.get("flowIntensity"):
+            bp_lines.append(f"  Интенсивность: {_escape_html(str(bp['flowIntensity']))}")
+        if isinstance(bp.get("allergies"), list) and bp["allergies"]:
+            bp_lines.append(
+                "  Аллергии: "
+                + _escape_html(", ".join(str(x) for x in bp["allergies"]))
+            )
+        if bp.get("diet"):
+            bp_lines.append(f"  Диета: {_escape_html(str(bp['diet']))}")
+        if bp.get("goal"):
+            bp_lines.append(f"  Цель: {_escape_html(str(bp['goal']))}")
+        if isinstance(bp.get("favoriteFlavors"), list) and bp["favoriteFlavors"]:
+            bp_lines.append(
+                "  Вкусы: "
+                + _escape_html(", ".join(str(x) for x in bp["favoriteFlavors"]))
+            )
+        if bp.get("notes"):
+            bp_lines.append(f"  Заметки: {_escape_html(str(bp['notes']))}")
+        if bp_lines:
+            lines.append("")
+            lines.append("🎁 <b>Box-профиль:</b>")
+            lines.extend(bp_lines)
+
+    lines.append("")
+    meta_bits: list[str] = []
+    if req.device_id:
+        meta_bits.append(f"device <code>{_escape_html(req.device_id)}</code>")
+    if req.locale:
+        meta_bits.append(f"locale {_escape_html(req.locale)}")
+    if req.timezone:
+        meta_bits.append(f"tz {_escape_html(req.timezone)}")
+    if meta_bits:
+        lines.append(" · ".join(meta_bits))
+    if req.user_agent:
+        ua = req.user_agent[:120]
+        lines.append(f"<i>{_escape_html(ua)}</i>")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lines.append(f"<i>{now}</i>")
+
+    return "\n".join(lines)
 
 
 def _canned_fallback(phase: str | None) -> str:

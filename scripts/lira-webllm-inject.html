@@ -1,24 +1,35 @@
 <!--
-  Backend redirector for the Lira chat screen.
+  Backend redirector + onboarding webhook for the Lira web app.
 
-  The bundled chat UI talks to `${syncApiBaseUrl()}/v1/lira/{status,chat}`.
-  `syncApiBaseUrl()` falls back to a hardcoded URL that is no longer reachable
-  (a dead serveo tunnel), so the chat would always 404. Instead of patching
-  the bundle, we monkey-patch `window.fetch` and rewrite any request whose
-  path is `/v1/lira/{status,chat}` to our Fly.io backend.
+  1) Chat redirector: the bundled chat UI talks to
+     `${syncApiBaseUrl()}/v1/lira/{status,chat}`. `syncApiBaseUrl()` falls back
+     to a dead serveo tunnel, so the chat would always 404. We monkey-patch
+     `window.fetch` and rewrite any request whose path is
+     `/v1/lira/{status,chat}` to our Fly.io backend.
 
-  The Fly.io backend (lira-backend on fly.dev) wraps Pollinations.ai, which
-  is a free, no-API-key, OpenAI-compatible chat endpoint. That keeps the
-  product zero-friction: any user opens the link from Instagram and chats
-  immediately, no flags, no signup, no waiting for a model to download.
+  2) Onboarding webhook: the bundled onboarding writes the full state object
+     (profile, cycle settings, period logs, shipping address, etc.) to
+     localStorage under `@cycle-tracker/data/v1` with `onboardingDone:true`
+     when the user finishes the questionnaire. We watch for that flip and
+     POST the data to `/v1/lira/onboarding`, which forwards a formatted
+     summary to the owner's Telegram.
+
+  The Fly.io backend (lira-backend on fly.dev) wraps Pollinations.ai for
+  the chat (free, no-API-key, OpenAI-compatible) and Telegram Bot API for
+  the onboarding notification. That keeps the product zero-friction: any
+  user opens the link from Instagram and chats immediately, no flags, no
+  signup, no waiting for a model to download.
 -->
 <script id="lira-llm-script">
-/* Lira chat backend redirector.
+/* Lira chat backend redirector + onboarding webhook.
    See lira-webllm-inject.html in scripts/ for the source-of-truth copy. */
 (function(){
   'use strict';
   var BACKEND = 'https://lira-backend-leoiurwi.fly.dev';
   var LIRA_PATH_RE = /\/v1\/lira\/(status|chat)(?:\?[^\s]*)?$/;
+  var STORAGE_KEY = '@cycle-tracker/data/v1';
+  var DEVICE_KEY = '@lira/sync/device-id/v1';
+  var NOTIFY_KEY = '@lira/onboarding-notified/v1';
 
   if (!window.fetch || window.__liraBackendRoutingInstalled) return;
   window.__liraBackendRoutingInstalled = true;
@@ -69,6 +80,131 @@
       return nativeFetch(input, init);
     }
   };
+
+  // ---------- Onboarding webhook ----------
+
+  function safeRead(key){
+    try {
+      var raw = window.localStorage.getItem(key);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) { return null; }
+  }
+  function readDeviceId(){
+    try {
+      var raw = window.localStorage.getItem(DEVICE_KEY);
+      return (typeof raw === 'string' && raw.length >= 6) ? raw : null;
+    } catch (_) { return null; }
+  }
+  function phaseFromCycleDay(day, cycleLength, periodLength){
+    if (!day || !cycleLength) return null;
+    if (day <= (periodLength || 5)) return 'menstrual';
+    var ovStart = Math.max(1, Math.round(cycleLength / 2) - 1);
+    var ovEnd = ovStart + 2;
+    if (day < ovStart) return 'follicular';
+    if (day <= ovEnd) return 'ovulation';
+    return 'luteal';
+  }
+  function computeCycleDay(logs, cycleLength){
+    if (!logs || typeof logs !== 'object') return null;
+    var days = [];
+    Object.keys(logs).forEach(function(k){
+      var entry = logs[k];
+      if (!entry || typeof entry !== 'object') return;
+      var flow = entry.flow;
+      if (!flow || flow === 'none') return;
+      days.push(k);
+    });
+    if (!days.length) return null;
+    days.sort();
+    var lastStart = null;
+    for (var i = days.length - 1; i >= 0; i--) {
+      if (i === 0 || (new Date(days[i]) - new Date(days[i-1])) > 86400000 * 1.5) {
+        lastStart = days[i];
+        break;
+      }
+    }
+    if (!lastStart) return null;
+    var diff = Math.floor((Date.now() - new Date(lastStart).getTime()) / 86400000) + 1;
+    if (cycleLength && diff > cycleLength) {
+      diff = ((diff - 1) % cycleLength) + 1;
+    }
+    return diff;
+  }
+  var notifyInFlight = false;
+  function postOnboarding(state){
+    try {
+      var profile = (state && state.profile) || {};
+      var settings = (state && state.settings) || {};
+      var cycleDay = computeCycleDay(state && state.logs, settings.averageCycleLength);
+      var phase = phaseFromCycleDay(cycleDay, settings.averageCycleLength, settings.averagePeriodLength);
+      var payload = {
+        device_id: readDeviceId(),
+        user_agent: (navigator && navigator.userAgent) || null,
+        locale: (navigator && (navigator.language || (navigator.languages && navigator.languages[0]))) || null,
+        timezone: (function(){ try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return null; } })(),
+        profile: { name: profile.name || null, birthdate: profile.birthdate || null },
+        settings: {
+          averageCycleLength: settings.averageCycleLength || null,
+          averagePeriodLength: settings.averagePeriodLength || null,
+          lutealPhaseLength: settings.lutealPhaseLength || null,
+          language: settings.language || null
+        },
+        shippingAddress: (state && state.shippingAddress) || null,
+        boxProfile: (state && state.boxProfile) || null,
+        logs: (state && state.logs) || {},
+        cycle_day: cycleDay,
+        phase: phase
+      };
+      nativeFetch(BACKEND + '/v1/lira/onboarding', {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(function(){});
+    } catch (_) {}
+  }
+  function maybeNotify(){
+    // Synchronous dedup: bail before any async work if we've already started.
+    if (notifyInFlight) return;
+    var state = safeRead(STORAGE_KEY);
+    if (!state || state.onboardingDone !== true) return;
+    var already;
+    try { already = window.localStorage.getItem(NOTIFY_KEY); } catch (_) { already = null; }
+    if (already) return;
+    notifyInFlight = true;
+    // Persist the dedup flag synchronously so a refresh during the request
+    // does not re-fire. Fire-and-forget request; on failure the user just
+    // won't get a duplicate retry, which is the safer trade-off here.
+    try { origSetItem.call(window.localStorage, NOTIFY_KEY, '1'); } catch (_) {}
+    postOnboarding(state);
+  }
+  // Watch for the flip via two channels: (a) every Storage.setItem call
+  // (the in-app save path) and (b) the cross-tab `storage` event (just in
+  // case). We also do an initial check on load so a refresh after onboarding
+  // still triggers the notification once.
+  // Patch Storage.prototype.setItem (not window.localStorage.setItem) so we
+  // don't add an enumerable own property to the Storage instance that would
+  // pollute `Object.keys(localStorage)`.
+  var origSetItem = Storage.prototype.setItem;
+  try {
+    Storage.prototype.setItem = function(key, value){
+      var result = origSetItem.call(this, key, value);
+      if (this === window.localStorage && key === STORAGE_KEY) {
+        setTimeout(maybeNotify, 0);
+      }
+      return result;
+    };
+  } catch (_) {}
+  window.addEventListener('storage', function(ev){
+    if (ev && ev.key === STORAGE_KEY) maybeNotify();
+  });
+  if (document.readyState === 'complete') {
+    setTimeout(maybeNotify, 100);
+  } else {
+    window.addEventListener('load', function(){ setTimeout(maybeNotify, 100); });
+  }
 })();
 </script>
 <!-- LIRA_LLM_INJECTED -->
