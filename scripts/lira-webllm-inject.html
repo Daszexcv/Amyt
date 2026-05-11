@@ -28,6 +28,8 @@
   var BACKEND = 'https://lira-backend-leoiurwi.fly.dev';
   var LIRA_PATH_RE = /\/v1\/lira\/(status|chat)(?:\?[^\s]*)?$/;
   var STORAGE_KEY = '@cycle-tracker/data/v1';
+  var SUB_SURVEY_KEY = '@lira/sub-survey/v1';
+  var SUBSCRIPTION_KEY = '@lira/subscription/v1';
   var DEVICE_KEY = '@lira/sync/device-id/v1';
   var NOTIFY_KEY = '@lira/onboarding-notified/v1';
 
@@ -132,12 +134,70 @@
     return diff;
   }
   var notifyInFlight = false;
+  // Mirror of backend `_build_forecast`: predict the next `horizon` periods so
+  // they appear in the Telegram message even when the backend is on an older
+  // build. The backend will re-derive the forecast itself when it has the
+  // forecast logic; this just makes sure the data round-trips.
+  function listPeriodRuns(logs){
+    if (!logs || typeof logs !== 'object') return [];
+    var days = [];
+    Object.keys(logs).forEach(function(k){
+      var entry = logs[k];
+      if (!entry || typeof entry !== 'object') return;
+      var flow = entry.flow;
+      if (!flow || flow === 'none') return;
+      days.push(k.slice(0, 10));
+    });
+    if (!days.length) return [];
+    days.sort();
+    var runs = [];
+    var start = days[0];
+    var prev = days[0];
+    for (var i = 1; i < days.length; i++) {
+      var gap = (new Date(days[i]) - new Date(prev)) / 86400000;
+      if (gap <= 1.5) { prev = days[i]; continue; }
+      runs.push({ start: start, end: prev });
+      start = days[i];
+      prev = days[i];
+    }
+    runs.push({ start: start, end: prev });
+    return runs;
+  }
+  function addDays(iso, n){
+    var d = new Date(iso);
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function computeForecast(logs, settings, horizon){
+    var runs = listPeriodRuns(logs);
+    if (!runs.length) return [];
+    var cycle = settings.averageCycleLength || 28;
+    var period = settings.averagePeriodLength || 5;
+    cycle = Math.max(15, Math.min(60, cycle));
+    period = Math.max(1, Math.min(14, period));
+    var lastStart = runs[runs.length - 1].start;
+    var today = new Date().toISOString().slice(0, 10);
+    var next = addDays(lastStart, cycle);
+    while ((new Date(next) - new Date(today)) / 86400000 < 0) {
+      next = addDays(next, cycle);
+    }
+    var future = [];
+    for (var i = 0; i < (horizon || 4); i++) {
+      var s = addDays(next, cycle * i);
+      var e = addDays(s, Math.max(0, period - 1));
+      future.push({ start: s, end: e });
+    }
+    return future;
+  }
   function postOnboarding(state){
     try {
       var profile = (state && state.profile) || {};
       var settings = (state && state.settings) || {};
       var cycleDay = computeCycleDay(state && state.logs, settings.averageCycleLength);
       var phase = phaseFromCycleDay(cycleDay, settings.averageCycleLength, settings.averagePeriodLength);
+      var subSurvey = safeRead(SUB_SURVEY_KEY);
+      var subscription = safeRead(SUBSCRIPTION_KEY);
+      var forecast = computeForecast(state && state.logs, settings, 4);
       var payload = {
         device_id: readDeviceId(),
         user_agent: (navigator && navigator.userAgent) || null,
@@ -153,6 +213,9 @@
         shippingAddress: (state && state.shippingAddress) || null,
         boxProfile: (state && state.boxProfile) || null,
         logs: (state && state.logs) || {},
+        subSurvey: subSurvey || null,
+        subscription: subscription || null,
+        forecast: forecast,
         cycle_day: cycleDay,
         phase: phase
       };

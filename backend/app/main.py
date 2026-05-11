@@ -22,7 +22,7 @@ import asyncio
 import logging
 import os
 import random
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -138,6 +138,8 @@ class OnboardingRequest(BaseModel):
     shippingAddress: OnboardingShipping | None = None
     logs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     boxProfile: dict[str, Any] | None = None
+    subscription: dict[str, Any] | None = None
+    subSurvey: dict[str, Any] | None = None
     cycle_day: int | None = None
     phase: str | None = None
 
@@ -290,12 +292,12 @@ def _fmt_date(value: str | None) -> str | None:
     return d.strftime("%d.%m.%Y")
 
 
-def _extract_period_ranges(
-    logs: dict[str, dict[str, Any]] | None, limit: int = 3
+def _extract_all_period_runs(
+    logs: dict[str, dict[str, Any]] | None,
 ) -> list[tuple[date, date]]:
-    """Find contiguous runs of dates with non-empty/non-'none' flow.
+    """Find every contiguous run of dates with non-empty/non-'none' flow.
 
-    Returns the most-recent N runs as (start_date, end_date) tuples.
+    Returns runs as (start_date, end_date) tuples sorted ascending by start.
     """
 
     if not logs:
@@ -325,8 +327,91 @@ def _extract_period_ranges(
         run_start = d
         prev = d
     runs.append((run_start, prev))
+    return runs
+
+
+def _extract_period_ranges(
+    logs: dict[str, dict[str, Any]] | None, limit: int = 3
+) -> list[tuple[date, date]]:
+    """Most-recent N period runs (newest first)."""
+
+    runs = _extract_all_period_runs(logs)
     runs.sort(key=lambda pair: pair[0], reverse=True)
     return runs[:limit]
+
+
+def _effective_cycle_period(
+    runs: list[tuple[date, date]], settings: OnboardingSettings
+) -> tuple[int, int]:
+    """Pick the effective cycle/period length the same way the app does.
+
+    For cycle length we use the rolling average of the last 3–6 inter-start
+    gaps (in [15, 60] days). For period length we average run sizes. Fall
+    back to the manual onboarding settings when there is not enough history.
+    """
+
+    # runs is newest-first; sort ascending for delta math.
+    asc = sorted(runs, key=lambda pair: pair[0])
+    gaps: list[int] = []
+    for i in range(1, len(asc)):
+        delta = (asc[i][0] - asc[i - 1][0]).days
+        if 15 <= delta <= 60:
+            gaps.append(delta)
+    recent = gaps[-6:]
+    cycle_len = (
+        round(sum(recent) / len(recent))
+        if len(recent) >= 3
+        else (settings.averageCycleLength or 28)
+    )
+
+    period_lengths = [(end - start).days + 1 for start, end in asc]
+    period_len = (
+        round(sum(period_lengths) / len(period_lengths))
+        if period_lengths
+        else (settings.averagePeriodLength or 5)
+    )
+    # Guard against pathological 0/negative values.
+    cycle_len = max(15, min(60, int(cycle_len)))
+    period_len = max(1, min(14, int(period_len)))
+    return cycle_len, period_len
+
+
+def _build_forecast(
+    logs: dict[str, dict[str, Any]] | None,
+    settings: OnboardingSettings,
+    today: date | None = None,
+    horizon: int = 4,
+) -> tuple[list[tuple[date, date]], date | None, tuple[date, date] | None]:
+    """Forecast the next ``horizon`` cycles + the nearest ovulation/fertile window.
+
+    Returns ``(future_periods, next_ovulation, fertile_window)``. Future periods
+    are listed in chronological order; the first item is the next predicted
+    period after ``today``. Returns empty list if there is no period history.
+    """
+
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    runs_asc = sorted(_extract_all_period_runs(logs), key=lambda pair: pair[0])
+    if not runs_asc:
+        return [], None, None
+    cycle_len, period_len = _effective_cycle_period(runs_asc, settings)
+    luteal = settings.lutealPhaseLength or 14
+    luteal = max(8, min(20, int(luteal)))
+
+    last_start = runs_asc[-1][0]
+    next_start = last_start + timedelta(days=cycle_len)
+    while (next_start - today).days < 0:
+        next_start = next_start + timedelta(days=cycle_len)
+
+    future: list[tuple[date, date]] = []
+    for i in range(horizon):
+        start = next_start + timedelta(days=cycle_len * i)
+        end = start + timedelta(days=max(0, period_len - 1))
+        future.append((start, end))
+
+    ovulation = next_start - timedelta(days=luteal)
+    fertile = (ovulation - timedelta(days=5), ovulation + timedelta(days=1))
+    return future, ovulation, fertile
 
 
 PHASE_LABEL_RU = {
@@ -336,12 +421,93 @@ PHASE_LABEL_RU = {
     "luteal": "Лютеиновая",
 }
 
+HYGIENE_LABEL_RU = {
+    "pads_regular": "Прокладки обычные",
+    "pads_organic": "Прокладки органические",
+    "tampons": "Тампоны",
+    "cup": "Менструальная чаша",
+    "period_underwear": "Менструальные трусы",
+    "none": "Ничего не нужно",
+}
+FLOW_LABEL_RU = {
+    "light": "Лёгкие",
+    "medium": "Средние",
+    "heavy": "Обильные",
+}
+ALLERGY_LABEL_RU = {
+    "chocolate": "Шоколад",
+    "nuts": "Орехи",
+    "gluten": "Глютен",
+    "lactose": "Лактоза",
+    "essential_oils": "Эфирные масла",
+    "fragrance": "Ароматизаторы",
+    "latex": "Латекс",
+}
+DIET_LABEL_RU = {
+    "regular": "Обычное",
+    "healthy": "ПП",
+    "vegetarian": "Вегетарианство",
+    "vegan": "Веганство",
+    "sugar_free": "Без сахара",
+}
+GOAL_LABEL_RU = {
+    "weight_loss": "Худею",
+    "weight_gain": "Набор массы",
+    "self_care": "Просто забота",
+}
+FLAVOR_LABEL_RU = {
+    "chocolate": "Шоколад",
+    "fruits": "Фрукты",
+    "citrus": "Цитрус",
+    "mint": "Мята",
+}
+CARE_LABEL_RU = {
+    "face_masks": "Маски",
+    "eye_patches": "Патчи",
+    "candles": "Свечи",
+    "tea": "Чай",
+    "cream": "Крем",
+    "balm": "Бальзам",
+    "scrub": "Скраб",
+}
+TARIFF_LABEL_RU = {
+    "premium": "Премиум",
+    "basic": "Твой ритм",
+    "vip": "Полная симфония",
+    "free": "Без подписки",
+}
+
+
+def _translate(values: Any, table: dict[str, str]) -> list[str]:
+    """Convert a list/single code value into Russian labels (falling back to the
+    raw code if it isn't in ``table``)."""
+
+    if values is None:
+        return []
+    if isinstance(values, str):
+        items = [values]
+    elif isinstance(values, (list, tuple)):
+        items = [str(v) for v in values if v is not None and v != ""]
+    else:
+        items = [str(values)]
+    return [table.get(item, item) for item in items]
+
 
 def _escape_html(text: str) -> str:
     return (
         text.replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
+    )
+
+
+def _fmt_run(start: date, end: date) -> str:
+    if start == end:
+        return f"{start.strftime('%d.%m.%Y')} (1 день)"
+    length = (end - start).days + 1
+    return (
+        f"{start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')} "
+        f"({length} дн.)"
     )
 
 
@@ -377,16 +543,36 @@ def build_telegram_message(req: OnboardingRequest) -> str:
         lines.append("")
         lines.append("🩸 <b>Месячные (последние):</b>")
         for start, end in runs:
-            if start == end:
-                lines.append(
-                    f"• {start.strftime('%d.%m.%Y')} (1 день)"
-                )
-            else:
-                length = (end - start).days + 1
-                lines.append(
-                    f"• {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')} "
-                    f"({length} дн.)"
-                )
+            lines.append(f"• {_fmt_run(start, end)}")
+
+    future, ovulation, fertile = _build_forecast(
+        req.logs, settings, horizon=4
+    )
+    if future:
+        today = datetime.now(timezone.utc).date()
+        lines.append("")
+        lines.append("🔮 <b>Прогноз следующих циклов:</b>")
+        for idx, (start, end) in enumerate(future):
+            extra = ""
+            if idx == 0:
+                days_until = (start - today).days
+                if days_until == 0:
+                    extra = " — сегодня"
+                elif days_until == 1:
+                    extra = " — завтра"
+                elif days_until > 1:
+                    extra = f" — через {days_until} дн."
+            lines.append(f"• {_fmt_run(start, end)}{extra}")
+        if ovulation:
+            lines.append(
+                f"⚡️ <b>Ближайшая овуляция:</b> {ovulation.strftime('%d.%m.%Y')}"
+            )
+        if fertile:
+            fs, fe = fertile
+            lines.append(
+                f"💞 <b>Фертильное окно:</b> {fs.strftime('%d.%m.%Y')} — "
+                f"{fe.strftime('%d.%m.%Y')}"
+            )
 
     has_address = any(
         getattr(shipping, f, None)
@@ -407,37 +593,122 @@ def build_telegram_message(req: OnboardingRequest) -> str:
         if addr:
             lines.append(f"  {_escape_html(addr)}")
         if shipping.phone:
-            lines.append(f"  ☆ {_escape_html(shipping.phone)}")
+            lines.append(f"  ☎ {_escape_html(shipping.phone)}")
 
-    if req.boxProfile:
+    if req.subscription:
+        sub = req.subscription
+        tier_code = (sub.get("tier") or "").strip()
+        tier_human = (
+            sub.get("tierTitle")
+            or TARIFF_LABEL_RU.get(tier_code, tier_code or "—")
+        )
+        sub_bits = [_escape_html(str(tier_human))]
+        if sub.get("price"):
+            sub_bits.append(f"{_escape_html(str(sub['price']))} ₽/мес")
+        if sub.get("orderId"):
+            sub_bits.append(f"заказ {_escape_html(str(sub['orderId']))}")
+        if sub.get("paidAt"):
+            sub_bits.append(
+                f"оплачено {_escape_html(_fmt_date(str(sub['paidAt'])) or '')}"
+            )
+        if sub.get("cardLast4"):
+            sub_bits.append(f"карта •• {_escape_html(str(sub['cardLast4']))}")
+        if sub.get("stub"):
+            sub_bits.append("<i>(тестовая оплата)</i>")
+        lines.append("")
+        lines.append("💎 <b>Подписка:</b> " + " · ".join(sub_bits))
+
+    if req.subSurvey and isinstance(req.subSurvey, dict):
+        answers = req.subSurvey.get("answers")
+        tariff = req.subSurvey.get("tariff") or {}
+        if isinstance(answers, dict) and answers:
+            lines.append("")
+            tariff_title = tariff.get("title") or TARIFF_LABEL_RU.get(
+                tariff.get("slug", ""), tariff.get("slug", "")
+            )
+            header = "📝 <b>Опросник подписки</b>"
+            if tariff_title:
+                header += f" — {_escape_html(str(tariff_title))}"
+            lines.append(header)
+            survey_labels = {
+                "hygiene": "Гигиена",
+                "hygiene_brands": "Бренды гигиены",
+                "allergies": "Аллергии и ограничения",
+                "sweet": "Сладкое",
+                "care": "Уход",
+                "skin": "Тип кожи",
+                "tea": "Чай",
+                "address": "Адрес",
+                "promo": "Промокод",
+            }
+            for key, value in answers.items():
+                label = survey_labels.get(key, key)
+                if value is None or value == "":
+                    continue
+                if isinstance(value, list):
+                    if not value:
+                        continue
+                    rendered = ", ".join(str(v) for v in value)
+                elif isinstance(value, dict):
+                    parts = [
+                        f"{k}: {v}" for k, v in value.items() if v not in (None, "")
+                    ]
+                    if not parts:
+                        continue
+                    rendered = "; ".join(parts)
+                else:
+                    rendered = str(value)
+                lines.append(f"  • {_escape_html(label)}: {_escape_html(rendered)}")
+
+    if req.boxProfile and isinstance(req.boxProfile, dict):
         bp = req.boxProfile
         bp_lines: list[str] = []
-        if isinstance(bp.get("hygieneTypes"), list) and bp["hygieneTypes"]:
-            bp_lines.append(
-                "  Гигиена: "
-                + _escape_html(", ".join(str(x) for x in bp["hygieneTypes"]))
-            )
+        hygiene = _translate(bp.get("hygieneTypes"), HYGIENE_LABEL_RU)
+        if hygiene:
+            bp_lines.append("  Гигиена: " + _escape_html(", ".join(hygiene)))
         if bp.get("flowIntensity"):
-            bp_lines.append(f"  Интенсивность: {_escape_html(str(bp['flowIntensity']))}")
-        if isinstance(bp.get("allergies"), list) and bp["allergies"]:
+            flow_human = FLOW_LABEL_RU.get(
+                str(bp["flowIntensity"]), str(bp["flowIntensity"])
+            )
+            bp_lines.append(f"  Интенсивность: {_escape_html(flow_human)}")
+        allergies = _translate(bp.get("allergies"), ALLERGY_LABEL_RU)
+        if allergies:
+            bp_lines.append("  Аллергии: " + _escape_html(", ".join(allergies)))
+        if bp.get("sensitiveSkin"):
+            bp_lines.append("  Чувствительная кожа: да")
+        if bp.get("allergyNotes"):
             bp_lines.append(
-                "  Аллергии: "
-                + _escape_html(", ".join(str(x) for x in bp["allergies"]))
+                f"  Заметки по аллергиям: {_escape_html(str(bp['allergyNotes']))}"
             )
         if bp.get("diet"):
-            bp_lines.append(f"  Диета: {_escape_html(str(bp['diet']))}")
+            diet_human = DIET_LABEL_RU.get(str(bp["diet"]), str(bp["diet"]))
+            bp_lines.append(f"  Питание: {_escape_html(diet_human)}")
         if bp.get("goal"):
-            bp_lines.append(f"  Цель: {_escape_html(str(bp['goal']))}")
-        if isinstance(bp.get("favoriteFlavors"), list) and bp["favoriteFlavors"]:
+            goal_human = GOAL_LABEL_RU.get(str(bp["goal"]), str(bp["goal"]))
+            bp_lines.append(f"  Цель: {_escape_html(goal_human)}")
+        flavors = _translate(bp.get("favoriteFlavors"), FLAVOR_LABEL_RU)
+        if flavors:
+            bp_lines.append("  Любимые вкусы: " + _escape_html(", ".join(flavors)))
+        care = _translate(bp.get("careItems"), CARE_LABEL_RU)
+        if care:
+            bp_lines.append("  Уход: " + _escape_html(", ".join(care)))
+        if bp.get("brandPreferences"):
             bp_lines.append(
-                "  Вкусы: "
-                + _escape_html(", ".join(str(x) for x in bp["favoriteFlavors"]))
+                f"  Бренды: {_escape_html(str(bp['brandPreferences']))}"
+            )
+        if "surpriseGift" in bp:
+            bp_lines.append(
+                f"  Сюрприз-подарок: {'да' if bp.get('surpriseGift') else 'нет'}"
+            )
+        if "wantsSamples" in bp:
+            bp_lines.append(
+                f"  Пробники: {'да' if bp.get('wantsSamples') else 'нет'}"
             )
         if bp.get("notes"):
             bp_lines.append(f"  Заметки: {_escape_html(str(bp['notes']))}")
         if bp_lines:
             lines.append("")
-            lines.append("🎁 <b>Box-профиль:</b>")
+            lines.append("🎁 <b>Box-профиль (онбординг):</b>")
             lines.extend(bp_lines)
 
     lines.append("")
