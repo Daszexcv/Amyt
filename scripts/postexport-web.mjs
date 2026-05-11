@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = process.cwd();
 const distDir = path.join(root, 'dist');
 const assetsDir = path.join(root, 'assets');
 const indexPath = path.join(distDir, 'index.html');
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
+const llmInjectPath = path.join(scriptsDir, 'lira-webllm-inject.html');
 
 if (!fs.existsSync(indexPath)) {
   throw new Error('dist/index.html not found. Run `expo export --platform web` first.');
@@ -106,6 +109,21 @@ if (!html.includes('apple-mobile-web-app-title')) {
   html = html.replace('<title>Lira</title>', `<title>Lira</title>${headInsert}`);
 }
 
+// Inject the chat backend redirector right before </body>. The bundled chat
+// screen calls `${syncApiBaseUrl()}/v1/lira/{status,chat}`, which falls back
+// to a hardcoded URL that is no longer reachable. The injected script
+// monkey-patches window.fetch so those endpoints route to our Fly.io backend
+// (backend/ in this repo). That keeps the chat zero-friction across all
+// browsers (including iOS Safari) — no flags, no signup, no model download.
+if (fs.existsSync(llmInjectPath) && !html.includes('LIRA_LLM_INJECTED')) {
+  const llmInject = fs.readFileSync(llmInjectPath, 'utf8');
+  if (html.includes('</body>')) {
+    html = html.replace('</body>', `${llmInject}\n</body>`);
+  } else {
+    html = `${html}\n${llmInject}`;
+  }
+}
+
 fs.writeFileSync(indexPath, html);
 
 const swSource = `// Lira PWA service worker — network-first for navigation requests so the
@@ -125,4 +143,4 @@ self.addEventListener('fetch', function(event){
 `;
 fs.writeFileSync(path.join(distDir, 'sw.js'), swSource);
 
-console.log('Post-processed dist for iOS home-screen metadata + PWA self-heal.');
+console.log('Post-processed dist for iOS home-screen metadata + PWA self-heal + on-device LLM injection.');
