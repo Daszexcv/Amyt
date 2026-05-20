@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Мехико — Ресторан мексиканской кухни</title>
+  <meta name="description" content="Ресторан Мехико — аутентичная мексиканская кухня в самом сердце города. Тако, буррито, начос, гуакамоле и многое другое." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ======= HEADER / NAV ======= -->
+  <header class="header" id="header">
+    <div class="container header__inner">
+      <a href="#" class="logo">
+        <span class="logo__icon">&#127798;</span>
+        <span class="logo__text">Мехико</span>
+      </a>
+      <nav class="nav" id="nav">
+        <a href="#about" class="nav__link">О нас</a>
+        <a href="#menu" class="nav__link">Меню</a>
+        <a href="#gallery" class="nav__link">Атмосфера</a>
+        <a href="#contact" class="nav__link">Контакты</a>
+      </nav>
+      <a href="#order" class="btn btn--header">Заказать</a>
+      <button class="burger" id="burger" aria-label="Открыть меню">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ======= MOBILE MENU ======= -->
+  <div class="mobile-menu" id="mobileMenu">
+    <nav class="mobile-menu__nav">
+      <a href="#about" class="mobile-menu__link">О нас</a>
+      <a href="#menu" class="mobile-menu__link">Меню</a>
+      <a href="#gallery" class="mobile-menu__link">Атмосфера</a>
+      <a href="#contact" class="mobile-menu__link">Контакты</a>
+      <a href="#order" class="btn btn--mobile">Заказать</a>
+    </nav>
+  </div>
+
+  <!-- ======= HERO ======= -->
+  <section class="hero" id="hero">
+    <div class="hero__overlay"></div>
+    <div class="container hero__content">
+      <p class="hero__subtitle">Ресторан мексиканской кухни</p>
+      <h1 class="hero__title">Мехико</h1>
+      <p class="hero__desc">Аутентичные вкусы Мексики — от тако аль пастор до чурросов с шоколадом. Каждое блюдо — маленькое путешествие.</p>
+      <div class="hero__actions">
+        <a href="#menu" class="btn btn--primary btn--lg">Смотреть меню</a>
+        <a href="#order" class="btn btn--outline btn--lg">Заказать столик</a>
+      </div>
+    </div>
+    <div class="hero__scroll">
+      <span>Листайте вниз</span>
+      <div class="hero__scroll-line"></div>
+    </div>
+  </section>
+
+  <!-- ======= ABOUT ======= -->
+  <section class="about section" id="about">
+    <div class="container">
+      <div class="about__grid">
+        <div class="about__img-wrap">
+          <img src="https://images.unsplash.com/photo-1613514785940-daed07799d9b?w=600&h=750&fit=crop" alt="Интерьер ресторана Мехико" class="about__img" loading="lazy" />
+        </div>
+        <div class="about__text">
+          <p class="section__label">О ресторане</p>
+          <h2 class="section__title">Вкус Мексики<br/>в каждом блюде</h2>
+          <p class="about__desc">Мехико — это место, где традиции мексиканской кухни встречаются с современным подходом к гастрономии. Наш шеф-повар использует только свежие ингредиенты и аутентичные рецепты, привезённые из самого сердца Мексики.</p>
+          <p class="about__desc">Мы создали пространство, где каждый гость чувствует тепло мексиканского гостеприимства — от первого чипса с сальсой до последнего глотка маргариты.</p>
+          <div class="about__stats">
+            <div class="stat">
+              <span class="stat__number">50+</span>
+              <span class="stat__label">Блюд в меню</span>
+            </div>
+            <div class="stat">
+              <span class="stat__number">12</span>
+              <span class="stat__label">Видов тако</span>
+            </div>
+            <div class="stat">
+              <span class="stat__number">100%</span>
+              <span class="stat__label">Свежие продукты</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= MENU ======= -->
+  <section class="menu section" id="menu">
+    <div class="container">
+      <p class="section__label section__label--center">Наше меню</p>
+      <h2 class="section__title section__title--center">Классика мексиканской кухни</h2>
+
+      <!-- Category Filter -->
+      <div class="menu__filters">
+        <button class="menu__filter active" data-filter="all">Все</button>
+        <button class="menu__filter" data-filter="appetizers">Закуски</button>
+        <button class="menu__filter" data-filter="main">Основные</button>
+        <button class="menu__filter" data-filter="desserts">Десерты</button>
+        <button class="menu__filter" data-filter="drinks">Напитки</button>
+      </div>
+
+      <!-- Menu Grid -->
+      <div class="menu__grid" id="menuGrid">
+
+        <!-- === ЗАКУСКИ === -->
+        <div class="menu-card" data-category="appetizers">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1615870216519-2f9fa575fa5c?w=500&h=400&fit=crop" alt="Гуакамоле" class="menu-card__img" loading="lazy" />
+            <span class="menu-card__badge">Хит</span>
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Гуакамоле</h3>
+              <span class="menu-card__price">490 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Свежее авокадо, лайм, кинза, томаты, халапеньо. Подаётся с кукурузными чипсами.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="appetizers">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1582169296194-e4d644c48063?w=500&h=400&fit=crop" alt="Начос" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Начос Супремос</h3>
+              <span class="menu-card__price">590 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Кукурузные чипсы с расплавленным сыром чеддер, халапеньо, сметаной и сальсой.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="appetizers">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1599974579688-8dbdd335c77f?w=500&h=400&fit=crop" alt="Кесадилья" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Кесадилья</h3>
+              <span class="menu-card__price">520 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Тортилья с тянущимся сыром оахака, грибами и эпазоте. Подаётся с гуакамоле.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="appetizers">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1640719028782-8230297a49a3?w=500&h=400&fit=crop" alt="Сальса и чипсы" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Сальса трио</h3>
+              <span class="menu-card__price">350 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Три вида сальсы — верде, роха и пико-де-гальо — с домашними тортилья-чипсами.</p>
+          </div>
+        </div>
+
+        <!-- === ОСНОВНЫЕ === -->
+        <div class="menu-card" data-category="main">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=500&h=400&fit=crop" alt="Тако аль пастор" class="menu-card__img" loading="lazy" />
+            <span class="menu-card__badge">Хит</span>
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Тако аль пастор</h3>
+              <span class="menu-card__price">650 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Маринованная свинина с ананасом, кинзой и луком на кукурузной тортилье. 3 шт.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="main">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=500&h=400&fit=crop" alt="Буррито" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Буррито карне асада</h3>
+              <span class="menu-card__price">790 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Большая тортилья с говядиной на гриле, рисом, чёрной фасолью, сыром и сальсой.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="main">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1534352956036-cd81e27dd615?w=500&h=400&fit=crop" alt="Энчилады" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Энчилады верде</h3>
+              <span class="menu-card__price">720 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Тортильи с курицей, залитые зелёным соусом из томатильо, со сметаной и сыром.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="main">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1599789197514-47270cd526b4?w=500&h=400&fit=crop" alt="Фахитас" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Фахитас с курицей</h3>
+              <span class="menu-card__price">850 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Шипящая курица с перцем и луком на раскалённой сковороде. С тортильями и соусами.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="main">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1564767655658-4d14f3a44985?w=500&h=400&fit=crop" alt="Чили кон карне" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Чили кон карне</h3>
+              <span class="menu-card__price">680 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Густое рагу из говядины с фасолью, томатами и перцем чили. Подаётся с рисом.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="main">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1625398407796-82650a8c135f?w=500&h=400&fit=crop" alt="Тамале" class="menu-card__img" loading="lazy" />
+            <span class="menu-card__badge">Новинка</span>
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Тамале</h3>
+              <span class="menu-card__price">550 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Кукурузное тесто с начинкой из свинины в листьях кукурузы. Традиционный рецепт. 2 шт.</p>
+          </div>
+        </div>
+
+        <!-- === ДЕСЕРТЫ === -->
+        <div class="menu-card" data-category="desserts">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1624353365286-3f8d62daad51?w=500&h=400&fit=crop" alt="Чуррос" class="menu-card__img" loading="lazy" />
+            <span class="menu-card__badge">Хит</span>
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Чуррос</h3>
+              <span class="menu-card__price">420 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Хрустящие палочки из заварного теста с корицей и сахаром. С горячим шоколадным соусом.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="desserts">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1626803775151-61d756612f97?w=500&h=400&fit=crop" alt="Флан" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Флан</h3>
+              <span class="menu-card__price">390 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Нежнейший карамельный крем-пудинг. Классика мексиканских десертов.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="desserts">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1571115177098-24ec42ed204d?w=500&h=400&fit=crop" alt="Сопапильяс" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Сопапильяс</h3>
+              <span class="menu-card__price">350 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Воздушные подушечки из теста, политые мёдом и посыпанные корицей.</p>
+          </div>
+        </div>
+
+        <!-- === НАПИТКИ === -->
+        <div class="menu-card" data-category="drinks">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1544145945-f90425340c7e?w=500&h=400&fit=crop" alt="Маргарита" class="menu-card__img" loading="lazy" />
+            <span class="menu-card__badge">Хит</span>
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Маргарита классик</h3>
+              <span class="menu-card__price">590 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Текила, ликёр трипл-сек, свежий сок лайма. На ободке — соль.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="drinks">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1560508179-b2c9a3f8e92b?w=500&h=400&fit=crop" alt="Орчата" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Орчата</h3>
+              <span class="menu-card__price">320 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Прохладный рисовый напиток с корицей и ванилью. Традиционное мексиканское agua fresca.</p>
+          </div>
+        </div>
+
+        <div class="menu-card" data-category="drinks">
+          <div class="menu-card__img-wrap">
+            <img src="https://images.unsplash.com/photo-1517701604599-bb29b565090c?w=500&h=400&fit=crop" alt="Мексиканский горячий шоколад" class="menu-card__img" loading="lazy" />
+          </div>
+          <div class="menu-card__body">
+            <div class="menu-card__header">
+              <h3 class="menu-card__name">Горячий шоколад</h3>
+              <span class="menu-card__price">380 &#8381;</span>
+            </div>
+            <p class="menu-card__desc">Густой горячий шоколад с корицей и щепоткой чили по рецепту ацтеков.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= GALLERY / ATMOSPHERE ======= -->
+  <section class="gallery section" id="gallery">
+    <div class="container">
+      <p class="section__label section__label--center">Атмосфера</p>
+      <h2 class="section__title section__title--center">Почувствуйте дух Мексики</h2>
+      <div class="gallery__grid">
+        <div class="gallery__item gallery__item--tall">
+          <img src="https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600&h=800&fit=crop" alt="Мексиканский интерьер" loading="lazy" />
+        </div>
+        <div class="gallery__item">
+          <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&h=400&fit=crop" alt="Подача блюд" loading="lazy" />
+        </div>
+        <div class="gallery__item">
+          <img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600&h=400&fit=crop" alt="Мексиканская еда" loading="lazy" />
+        </div>
+        <div class="gallery__item gallery__item--wide">
+          <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1000&h=500&fit=crop" alt="Зал ресторана" loading="lazy" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= ORDER / RESERVATION ======= -->
+  <section class="order section" id="order">
+    <div class="container">
+      <div class="order__grid">
+        <div class="order__info">
+          <p class="section__label">Бронирование</p>
+          <h2 class="section__title">Забронируйте<br/>ваш столик</h2>
+          <p class="order__desc">Оставьте заявку, и мы перезвоним вам в течение 15 минут для подтверждения.</p>
+          <div class="order__features">
+            <div class="order__feature">
+              <span class="order__feature-icon">&#127861;</span>
+              <div>
+                <strong>Завтраки</strong>
+                <span>09:00 — 12:00</span>
+              </div>
+            </div>
+            <div class="order__feature">
+              <span class="order__feature-icon">&#127798;</span>
+              <div>
+                <strong>Обед и ужин</strong>
+                <span>12:00 — 23:00</span>
+              </div>
+            </div>
+            <div class="order__feature">
+              <span class="order__feature-icon">&#127881;</span>
+              <div>
+                <strong>Банкеты</strong>
+                <span>По предзаказу</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <form class="order__form" id="orderForm">
+          <div class="form-group">
+            <input type="text" class="form-input" placeholder="Ваше имя" required />
+          </div>
+          <div class="form-group">
+            <input type="tel" class="form-input" placeholder="Телефон" required />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <input type="date" class="form-input" required />
+            </div>
+            <div class="form-group">
+              <select class="form-input" required>
+                <option value="" disabled selected>Время</option>
+                <option>12:00</option>
+                <option>13:00</option>
+                <option>14:00</option>
+                <option>15:00</option>
+                <option>16:00</option>
+                <option>17:00</option>
+                <option>18:00</option>
+                <option>19:00</option>
+                <option>20:00</option>
+                <option>21:00</option>
+                <option>22:00</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <select class="form-input" required>
+              <option value="" disabled selected>Количество гостей</option>
+              <option>1 гость</option>
+              <option>2 гостя</option>
+              <option>3 гостя</option>
+              <option>4 гостя</option>
+              <option>5-6 гостей</option>
+              <option>7-10 гостей</option>
+              <option>Более 10</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <textarea class="form-input form-textarea" placeholder="Пожелания (необязательно)" rows="3"></textarea>
+          </div>
+          <button type="submit" class="btn btn--primary btn--full">Забронировать столик</button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= CONTACT / FOOTER ======= -->
+  <footer class="footer" id="contact">
+    <div class="container">
+      <div class="footer__grid">
+        <div class="footer__brand">
+          <a href="#" class="logo logo--light">
+            <span class="logo__icon">&#127798;</span>
+            <span class="logo__text">Мехико</span>
+          </a>
+          <p class="footer__tagline">Аутентичная мексиканская кухня<br/>в самом сердце города</p>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__heading">Контакты</h4>
+          <p>+7 (495) 123-45-67</p>
+          <p>info@mexico-rest.ru</p>
+          <p>ул. Арбат, 24, Москва</p>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__heading">Часы работы</h4>
+          <p>Пн — Чт: 12:00 — 23:00</p>
+          <p>Пт — Сб: 12:00 — 01:00</p>
+          <p>Вс: 11:00 — 22:00</p>
+        </div>
+        <div class="footer__col">
+          <h4 class="footer__heading">Навигация</h4>
+          <a href="#about" class="footer__link">О нас</a>
+          <a href="#menu" class="footer__link">Меню</a>
+          <a href="#gallery" class="footer__link">Атмосфера</a>
+          <a href="#order" class="footer__link">Бронь</a>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <p>&copy; 2025 Ресторан Мехико. Все права защищены.</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ======= ORDER SUCCESS MODAL ======= -->
+  <div class="modal" id="modal">
+    <div class="modal__backdrop" id="modalBackdrop"></div>
+    <div class="modal__content">
+      <span class="modal__icon">&#127798;</span>
+      <h3 class="modal__title">Заявка отправлена!</h3>
+      <p class="modal__text">Мы перезвоним вам в течение 15 минут для подтверждения бронирования.</p>
+      <button class="btn btn--primary" id="modalClose">Отлично</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
